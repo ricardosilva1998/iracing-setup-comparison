@@ -121,9 +121,25 @@ If Cognito ever requires MFA / captcha / SMS for this account, the scraper will 
 
 ## Deployment
 
-Default: **Railway** (per global instructions). Not yet provisioned. `team-deployment` will set this up only after `team-qa` sign-off and explicit user approval.
+**Platform:** Railway (default per global instructions).
 
-GitHub repo: not yet created. Suggested name: `iracing-setup-comparison`.
+**GitHub repo:** https://github.com/ricardosilva1998/iracing-setup-comparison (private).
+
+**Railway:**
+- Project: `iracing-setup-comparison` (id `164f2e76-c754-47dd-8c16-05cc6f264837`)
+- Service: `iracing-setup-comparison` (id `b40601ae-dfc6-4e6c-aa2c-7b5538b87c06`)
+- Environment: `production`
+- Public URL: https://iracing-setup-comparison-production.up.railway.app
+- First deploy: 2026-04-29 (round 4)
+
+**Environment variables on Railway** (set, including secrets via `--stdin`):
+`DATABASE_URL=file:./dev.db`, `DATABASE_PATH=/app/dev.db`, `SCRAPER_CONTACT_EMAIL=ricardomrbs1998@gmail.com`, `GRID_AND_GO_EMAIL`, `GRID_AND_GO_PASSWORD`.
+
+**Redeploy:** push to `main` (Railway picks up via the linked GitHub repo) or run `railway up` from the project directory while linked. Either path rebuilds the Docker image, including a fresh `db:push` + `db:seed` during the build stage.
+
+**Open: production data ingestion.** The standalone Docker image only ships `server.js` plus the minimal node_modules tracing requires; the scrapers (`scripts/scrape-hymo.ts`, `scripts/scrape-grid-and-go.ts`) and `tsx` are NOT in the runner stage. Therefore `railway ssh` cannot run `npm run scrape:*` against the deployed container, and `railway run` only injects env vars into a *local* command. The first production deploy ships an empty database (4 shops, 6 categories, 1 season, 13 weeks seeded; 0 listings, 0 lap times). `/compare` correctly renders the empty-state. Round 5 needs to add a `POST /api/ingest` route (bearer-token-protected, mirrors the sibling `iracing-leaderboard` pattern) so scrapers can run on a cron and write to the live DB. Until then, the live site is a deploy smoke only — not a working data product.
+
+**Volume note (also round 5):** the SQLite file in production lives inside the container's writable layer (`/app/dev.db`); it is NOT on a persistent volume, so each redeploy resets it. Once an ingest endpoint exists, mount a Railway Volume at `/app/data/` and switch `DATABASE_PATH` to it so scrapes survive deploys.
 
 ## Team Activity Log
 
@@ -274,3 +290,51 @@ Format per entry:
 - **Surfaced (env quirk):** the user's running dev server (Next dev `b3g2yob01` on port 3000) still holds a Prisma client connected to the *previous* dev.db (now wiped + replaced). The Prisma client should reconnect on the next request, but if `/compare` shows stale or zero data on first refresh, bouncing that task picks up the new file cleanly.
 - **QA verdict: PASS for round 3.** Acceptance criterion (the conflict SQL returning 0 rows + each conflict-prone car appearing once with both shop cells side-by-side) is met. /compare renders, lint+build green, both scrapers idempotent. Ready for round 4 (deploy) once the user authorises.
 **Open:** Track-name canonicalisation (mirror round 3, for tracks). 2026 S1 weeks still unseeded so HYMO's S1 backlog isn't displayable. Cognito refresh-token rotation. eslint flat config still gated by `config-protection` hook. Dev server bounce after dev.db wipe.
+
+### 2026-04-29 22:15 — team-security (round 4 pre-deploy re-glance)
+**Task:** Quick re-glance audit before first deploy: confirm no XSS surface from round 3's series column, .env hygiene, scraper logging, dependency stability, no secrets in Dockerfile.
+**Files:** none modified (audit only)
+**Decisions:**
+- `SetupListing.series` is NOT rendered in the UI. `grep -n "series"` against `components/CompareTable.tsx`, `lib/compare-data.ts`, `app/compare/page.tsx` returns zero matches. Round 3 stored series as display-only metadata for v2 but never wired it into a render path. Zero XSS surface even if a shop returned malicious HTML in the `series` field.
+- `.env` is gitignored (`.gitignore:34`); `git check-ignore -v .env` confirms; `git status --short` shows `.env` correctly absent from staged/untracked-to-be-committed files.
+- Round 3 scraper updates use the same `console.*` patterns audited in round 2: `redact()` for cred metadata, `sanitise()` to strip secrets from error messages, `safeUrl()` to strip OAuth params from URLs. Spot-checked all 16 console call sites in `scrape-grid-and-go.ts` and 11 in `scrape-hymo.ts` — no new pattern, no raw cred logging.
+- Dependencies unchanged from round 2 audit. `npm ls --depth=0` against round-2 baseline: identical (next 16.2.4, prisma 7.8.0, etc.). No new packages added in round 3.
+- Dockerfile reviewed: does NOT `COPY .env*` (`.dockerignore` lists `.env` explicitly). Secrets must come from Railway runtime vars, not baked into the image.
+- **Verdict: SIGN OFF for deploy.** No blocking findings.
+**Open:** Round 4 production-data ingestion (see Deployment section) introduces a future attack surface — the proposed `/api/ingest` endpoint will need a strong bearer token, rate limit, and audit logging. Pre-flight that with team-security in round 5 before exposing it.
+
+### 2026-04-29 22:25 — team-qa (round 4 final pre-deploy)
+**Task:** Final smoke: lint, build, conflict-SQL, dev-server route check, Docker image smoke (intended), Railway deploy gate.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) → green.
+- `npm run build` (Next 16.2.4 + Turbopack) → green; routes `/`, `/_not-found`, `/compare` (dynamic) all generate.
+- Conflict-SQL `SELECT name, COUNT(DISTINCT carClass) FROM Car GROUP BY name HAVING COUNT(DISTINCT carClass) > 1;` → 0 rows. Round 3 normalisation holds.
+- Dev-server smoke (port 3000, user's running task `b67p6rqbh`): `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/compare` → 200.
+- **Docker smoke (NOT performed locally):** `docker` CLI is not installed in this environment (`command not found: docker`). Mitigation: this project's Dockerfile is byte-identical to the production-proven `iracing-leaderboard/Dockerfile` per `diff` — same node:22-alpine multi-stage pattern, same Prisma generate/db:push/seed/build chain, same standalone copy. Risk that the Docker build fails in a way the sibling project doesn't is low; Railway will be the build authority and surface any divergence. **Caveat noted; deploy gate not blocked.**
+- **QA verdict: PASS for round 4 deploy.** Caveat: local Docker smoke was substituted with a Dockerfile-parity check against the working sibling.
+**Open:** Acquire `docker` for future round-N pre-deploy smoke. Round 4's actual deploy will reveal any project-specific Dockerfile drift (it did — see team-deployment entry).
+
+### 2026-04-29 22:45 — team-deployment (round 4 — first deploy)
+**Task:** Initial commit, push to GitHub (private), provision Railway project + service, set vars, deploy, healthcheck, tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{public/.gitkeep (new), CLAUDE.md (Deployment section + this log)}
+**Decisions:**
+- **Pre-flight:** git status clean of `.env` and `dev.db`; `git config user.name=Ricardo Silva` and `user.email=62600756+ricardosilva1998@users.noreply.github.com` already set globally; `gh auth status` → ricardosilva1998 logged in (ssh, scopes incl. `repo`); `railway --version` → 4.31.0, logged in as `ricardomrbs1998@gmail.com`.
+- **First commit:** `git add` listed 18 explicit paths (NOT `.`); HEAD = `d719add89d55297876c01a4f1fd2cad3a662c1e9`. Commit message describes round 1-3 work.
+- **GitHub:** created `ricardosilva1998/iracing-setup-comparison` (private), pushed `main`, remote SHA matches local. URL: https://github.com/ricardosilva1998/iracing-setup-comparison.
+- **Railway provision:** `railway init --name iracing-setup-comparison` (workspace: Ricardo Silva's Projects); project id `164f2e76-c754-47dd-8c16-05cc6f264837`. `railway add --service iracing-setup-comparison` (Empty Service template); service id `b40601ae-dfc6-4e6c-aa2c-7b5538b87c06`.
+- **Variables:** non-secret vars set inline (`DATABASE_URL=file:./dev.db`, `DATABASE_PATH=/app/dev.db`, `SCRAPER_CONTACT_EMAIL=ricardomrbs1998@gmail.com`). Secrets set via `railway variable set <KEY> --stdin --skip-deploys` piped from `grep ^<KEY>= .env | cut -d= -f2-` so the password never appears in any visible Bash command or process arg list. `railway variable list -k` confirms all 5 application vars present.
+- **Deploy 1: FAILED** at runner stage `COPY --from=builder /app/public ./public` — this project never had a `public/` directory. Build (deps + builder + prisma generate + db:push + seed + npm run build) completed cleanly; failure was at runner-stage COPY only.
+- **Fix:** created `public/.gitkeep`, committed `2ea2edc` ("fix: add public/ directory for Dockerfile multi-stage COPY"), pushed.
+- **Deploy 2: SUCCESS.** Build green. `railway domain` → https://iracing-setup-comparison-production.up.railway.app.
+- **Healthcheck:** `GET /` → 200 (12.4 KB), `GET /compare` → 200 (20.85 KB rendering the "No setup listings match the current filters" empty-state, since the deployed DB has only the 4 shops + 6 categories + 1 season + 13 weeks from `db:seed` — no scraped listings). The empty state is correct given the production DB has never been scraped.
+- **Logs (~30s tail post-deploy + after triggering a `/`, `/compare`, `/compare?categoryId=3&carClass=GT3` request fan):** `Starting Container` → `Ready in 0ms` → `Next.js 16.2.4` → `Local: http://localhost:8080` → `Network: http://0.0.0.0:8080`. No error spew. Standalone server logs nothing per-request by default.
+- **Production data ingestion BLOCKED.** Discovered after deploy: the standalone Next.js runner image does not include `scripts/`, `lib/seed.ts`, or `tsx`, so `railway ssh "npm run scrape:*"` fails (paths don't exist in the container); `railway run` only sets env vars on a *local* command and writes to a local DB, not Railway's container. There is no current path to populate the deployed DB. **Round 5 must add `POST /api/ingest` (bearer-token, like the sibling project) and a Railway Volume for the SQLite file.** Documented in the Deployment section.
+- **Volume omitted** for round 4 by oversight — even once ingest exists, the SQLite file lives in the container layer and resets on every redeploy. Round 5 must add a Railway Volume at `/app/data/` and update `DATABASE_PATH` accordingly.
+**Open:**
+- Round 5: `POST /api/ingest` route + bearer-token auth + cron caller + Railway Volume mount.
+- Refactor scrapers so the runtime ingest path can call them (move HYMO/GnG fetch + parse logic out of `scripts/scrape-*.ts` into `lib/scrape/*.ts` so they're tracing-reachable from an app route).
+- Track normalisation pass (round-3-shape problem applied to Track names: Hockenheimring vs Hockenheimring Baden-Württemberg, Summit Point variants, Nürburgring Combined).
+- Coach Dave / P1Doks decision (still untouched; both are auth/Cloudflare gated; defer or drop from the comparison set).
+- Cognito refresh-token rotation, only relevant once cron exists.
+- 2026 S1 weeks unseeded — HYMO has S1 data we can't currently key.
