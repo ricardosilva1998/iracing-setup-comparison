@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-road: #3b82f6;
+  --color-oval: #ef4444;
+  --color-dirt-road: #f97316;
+  --color-dirt-oval: #b45309;
+  --color-positive: #22c55e;
+  --color-negative: #ef4444;
+}
+
+body {
+  background-color: #030712;
+  color: #f3f4f6;
+}

@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// One of the four target setup shops. Most are not scrapeable; we still
+// model them as Shop rows so the comparison UI shows a labelled empty state.
+model Shop {
+  id             Int            @id @default(autoincrement())
+  name           String         @unique
+  url            String
+  scrapingStatus String         // SCRAPED | LOGIN_WALLED | CLOUDFLARE_BLOCKED | API_LOCKED
+  notes          String?
+  setupListings  SetupListing[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+// e.g. 2026 S2 -- supports historical though MVP only seeds the current season.
+model Season {
+  id        Int          @id @default(autoincrement())
+  year      Int
+  quarter   Int
+  label     String
+  weeks     SeasonWeek[]
+  createdAt DateTime     @default(now())
+
+  @@unique([year, quarter])
+}
+
+model SeasonWeek {
+  id            Int            @id @default(autoincrement())
+  seasonId      Int
+  season        Season         @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  weekNum       Int            // 1..13
+  label         String
+  setupListings SetupListing[]
+
+  @@unique([seasonId, weekNum])
+  @@index([weekNum])
+}
+
+// iRacing top-level: Road / Oval / Sports Car / Formula / Dirt Road / Dirt Oval.
+// Stored as a table (not enum) so it can be extended without a schema migration.
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  cars Car[]
+}
+
+// One canonical row per real iRacing car. `carClass` is the canonical class
+// (HYMO's taxonomy where available, name-derived otherwise -- see
+// lib/car-class-canonical.ts). Round 3 dropped the (name, carClass)
+// composite uniqueness because GnG was emitting series-as-class which
+// fragmented the same car across 2-5 rows.
+model Car {
+  id            Int            @id @default(autoincrement())
+  name          String         @unique
+  carClass      String         // GT3 / GTP/LMDh / LMP2 / MX-5 / etc.
+  categoryId    Int
+  category      Category       @relation(fields: [categoryId], references: [id])
+  setupListings SetupListing[]
+
+  @@index([carClass])
+  @@index([categoryId])
+}
+
+model Track {
+  id            Int            @id @default(autoincrement())
+  name          String         @unique
+  setupListings SetupListing[]
+}
+
+// One row per (shop, car, track, week) combination -- "shop X sells a setup
+// for car Y at track Z in week W". Scraped from HYMO; absent for blocked shops.
+// Round 3 added `series` -- the shop-side series label (e.g. GnG's "GT-Sprint"
+// / "ENDURANCE", HYMO's "GT3 Sprint Series") preserved for display only.
+// Class lives on Car (canonical); series is per-listing context.
+model SetupListing {
+  id           Int        @id @default(autoincrement())
+  shopId       Int
+  shop         Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  carId        Int
+  car          Car        @relation(fields: [carId], references: [id])
+  trackId      Int
+  track        Track      @relation(fields: [trackId], references: [id])
+  seasonWeekId Int
+  seasonWeek   SeasonWeek @relation(fields: [seasonWeekId], references: [id])
+  url          String
+  price        Float?
+  series       String?    // shop's series label, display-only metadata
+  lastSeenAt   DateTime
+  lapTime      LapTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([shopId, carId, trackId, seasonWeekId])
+  @@index([carId])
+  @@index([trackId])
+  @@index([seasonWeekId])
+  @@index([series])
+}
+
+// Optional 0..1 relationship -- a listing may have a published lap time.
+// HYMO sometimes publishes preview times; in practice this stays sparse.
+model LapTime {
+  id              Int          @id @default(autoincrement())
+  setupListingId  Int          @unique
+  setupListing    SetupListing @relation(fields: [setupListingId], references: [id], onDelete: Cascade)
+  timeSeconds     Float
+  source          String       // SHOP_PUBLISHED | DRIVER_SUBMITTED | UNKNOWN
+  recordedAt      DateTime     @default(now())
+}
+
+// Append-only log of scraper runs (for ops + qa).
+model ScrapeRun {
+  id          Int      @id @default(autoincrement())
+  shopName    String
+  status      String   // OK | PARTIAL | FAILED | BLOCKED
+  fetched     Int      @default(0)
+  inserted    Int      @default(0)
+  updated     Int      @default(0)
+  error       String?
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+}
