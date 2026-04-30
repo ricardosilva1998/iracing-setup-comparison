@@ -1397,4 +1397,34 @@ Format per entry:
 - `ADMIN_USER` + `ADMIN_PASSWORD` must be set on Railway before the Browse setup files link is usable in production.
 - File cache has no TTL; stale-after-GnG-update scenario deferred to a future round.
 - Turbopack build warning: "Encountered unexpected file in NFT list" on `app/api/files/[datapackId]/[filename]/route.ts` importing `next.config.ts` via transitive `process.cwd()` call. Non-blocking warning; resolves naturally once `FILES_CACHE_ROOT` is scoped to a static subpath.
+
+### 2026-04-30 00:30 — team-deployment (round 21)
+**Task:** Commit + push GnG file-download pipeline (round 21); deploy to Railway; verify admin/files page, binary stream, path traversal, cache hit, car page wire-up, all regression invariants.
+**Commits:**
+- `c08d819` — "feat(round 21): GnG setup file downloads (admin-gated, lazy cache on volume)" — 11 files, 1058 insertions, 85 deletions.
+- `d648829` — "fix(round 21): allow underscores in datapackId validation regex" — `lib/files-manifest.ts` regex `^[a-zA-Z0-9]{4,30}$` → `^[a-zA-Z0-9_-]{4,40}$`. Real GnG IDs (e.g. `b4SgQqqz5q_V`) contain underscores; original regex rejected all of them.
+- `83e8ddd` — "fix(round 21): fix binary route validateDatapackId regex (local copy)" — `app/api/files/[datapackId]/[filename]/route.ts` had its own local copy of the too-strict regex; widened to match the lib fix.
+**Pushed to:** origin/main @ 83e8ddd
+**PR:** n/a
+**Deploy:** 3 sequential `railway up --detach` calls.
+- Deploy 1 `5d24e289`: feat commit → SUCCESS, but admin/files page rendered "Invalid datapack ID" for `b4SgQqqz5q_V` (regex too strict).
+- Deploy 2 `27922b58`: lib regex fix → SUCCESS. Admin/files page now returns "Setup files" + 9 Download links + "served from cache". But binary route still 400 (local copy not yet fixed).
+- Deploy 3 `c3a31b2c`: binary route regex fix → SUCCESS. Binary download HTTP 200, 2290 bytes, `Content-Disposition: attachment; filename="26S2-W03-GnG-Hockenheim-BMW-Endu-Safe.sto"`.
+**Build time:** ~75-90s per deploy (unchanged from r20; no new apk deps).
+**Healthcheck (all against deploy 3, final state):**
+- `GET /` → 200 (27 KB); banner=0, Apply=0, wrench SVG present (round-18/19/20 invariants).
+- `GET /admin` no auth → 401 + `WWW-Authenticate: Basic realm="iRacing Setup Admin"`. With auth → 200.
+- `ADMIN_USER=admin` and `ADMIN_PASSWORD=JMQS3IPeexPRudGWk9rxWA==` confirmed present in Railway env via `railway variables --kv | grep ^ADMIN_` (values not printed). No re-roll needed.
+- `GET /admin/files/b4SgQqqz5q_V` no auth → 401. With auth → 200, "served from cache" badge, 9 Download links. Cache hit time: <1s.
+- `GET /api/files/b4SgQqqz5q_V/26S2-W03-GnG-Hockenheim-BMW-Endu-Safe.sto` with auth → 200, `Content-Disposition: attachment; filename="26S2-W03-GnG-Hockenheim-BMW-Endu-Safe.sto"`, 2290 bytes on disk (`/tmp/r21-final.sto`). Matches volume cache entry.
+- Path traversal `/api/files/b4SgQqqz5q_V/..%2F..%2Fetc%2Fpasswd` → 400. PASS.
+- Car page wire-up: `GET /week/3/track/28/car/3` → `href="/admin/files/b4SgQqqz5q_V"` present (1 match). "Open setup ↗" GnG SPA link also present. PASS.
+- `/api/ingest` GET → 405. POST no bearer → 401. Ingest path unaffected by proxy matcher change. PASS.
+- Volume logs: `[files] cached b4SgQqqz5q_V/26S2-W03-GnG-Hockenheim-BMW-Endu-Safe.sto (2290 bytes)` … 10 files total … `[files] cache hit: b4SgQqqz5q_V (10 files)`. No errors. No Chromium failures (P1Doks public-path + HYMO + gosetups + MG unaffected). No restart cycles.
+**Logs after deploy (60s window):** Mounting volume → Starting Container → Next.js 16.2.4 → Ready in 0ms → `[files] cache hit: b4SgQqqz5q_V (10 files)` (from healthcheck requests). Clean — no errors, no warnings.
+**Open:**
+- File cache has no TTL / invalidation mechanism. If GnG updates a datapack's files, the cached copy will be stale. Future round: add a `?refresh=1` param (admin-only) or a TTL check on cache-miss.
+- The binary route's `validateDatapackId` was a local duplicate of the one in `lib/files-manifest.ts`. Future cleanup: import from the shared lib to avoid divergence again.
+- Cache-miss flow not exercised in production healthcheck (volume already had `b4SgQqqz5q_V` from deploy-2's successful page load, which ran the GnG auth + file fetch). Cache-miss will happen naturally on first access of any new datapack ID.
+- Round 22 backlog: mobile UI for 5-column table, `Oval` class cleanup, VRS decision, INGEST_SECRET rotation policy (all carry-over from r11-r20).
 - File cache has no TTL — stale setups stay cached until manually evicted. A `?refresh=1` param or cache-bust endpoint is a future round candidate.
