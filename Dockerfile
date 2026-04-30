@@ -44,10 +44,10 @@ CMD sh -c '\
   TARGET="${DATABASE_PATH:-/app/dev.db}"; \
   TARGET_DIR=$(dirname "$TARGET"); \
   mkdir -p "$TARGET_DIR"; \
-  if [ ! -f "$TARGET" ]; then \
-    echo "[boot] seeding $TARGET from /app/dev.db.seed"; \
+  if [ ! -s "$TARGET" ]; then \
+    echo "[boot] seeding $TARGET from /app/dev.db.seed (was missing or 0 bytes)"; \
     cp /app/dev.db.seed "$TARGET"; \
   else \
-    echo "[boot] $TARGET already exists; preserving"; \
+    echo "[boot] $TARGET already populated; preserving"; \
   fi; \
   exec node server.js'
