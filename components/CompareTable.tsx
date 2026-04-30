@@ -45,7 +45,9 @@ function Cell({ cell }: { cell: CompareCell }) {
         Open setup
       </a>
       <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-400">
-        {cell.price != null && <span>{formatPrice(cell.price)}</span>}
+        {cell.price != null && cell.shopName !== "P1Doks" && (
+          <span>{formatPrice(cell.price)}</span>
+        )}
         {cell.lapTimeSeconds != null && (
           <span className="text-emerald-400">
             {formatLapTime(cell.lapTimeSeconds)}

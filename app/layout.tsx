@@ -36,7 +36,7 @@ export default function RootLayout({
               </span>
             </Link>
             <nav className="flex items-center gap-4 text-sm text-gray-300">
-              <Link href="/compare" className="hover:text-white">Compare</Link>
+              <Link href="/" className="hover:text-white">Compare</Link>
             </nav>
           </div>
         </header>

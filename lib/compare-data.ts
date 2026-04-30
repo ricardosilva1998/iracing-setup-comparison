@@ -10,6 +10,7 @@ export type CompareFilters = {
   seasonId?: number;
   carClass?: string;
   weekNum?: number;
+  trackId?: number;
 };
 
 export type CompareData = {
@@ -17,9 +18,11 @@ export type CompareData = {
   carClasses: string[];
   seasons: { id: number; year: number; quarter: number; label: string }[];
   weeks: { id: number; weekNum: number; label: string }[];
+  tracks: { id: number; name: string }[];
   selectedSeasonId: number | null;
   selectedCarClass: string | null;
   selectedWeekNum: number | null;
+  selectedTrackId: number | null;
   rows: CompareRow[];
 };
 
@@ -28,7 +31,7 @@ export type CompareData = {
  * Cells are returned in stable shop-id order so the columns line up.
  */
 export async function getCompareData(filters: CompareFilters): Promise<CompareData> {
-  const [shops, carClassesRaw, seasons] = await Promise.all([
+  const [shops, carClassesRaw, seasons, tracks] = await Promise.all([
     prisma.shop.findMany({ orderBy: { id: "asc" } }),
     prisma.car.findMany({
       select: { carClass: true },
@@ -37,6 +40,10 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
     }),
     prisma.season.findMany({
       orderBy: [{ year: "desc" }, { quarter: "desc" }],
+    }),
+    prisma.track.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -51,6 +58,7 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
 
   const selectedWeekNum = filters.weekNum ?? null;
   const selectedCarClass = filters.carClass ?? null;
+  const selectedTrackId = filters.trackId ?? null;
 
   // Build the (car, track) row set: every (car, track) pair for which any
   // shop has a SetupListing under the chosen filters. Rows for which no shop
@@ -66,6 +74,9 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
   }
   if (selectedCarClass) {
     listingWhere.car = { carClass: selectedCarClass };
+  }
+  if (selectedTrackId) {
+    listingWhere.trackId = selectedTrackId;
   }
 
   const listings = await prisma.setupListing.findMany({
@@ -127,9 +138,11 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
       weekNum: w.weekNum,
       label: w.label,
     })),
+    tracks,
     selectedSeasonId,
     selectedCarClass,
     selectedWeekNum,
+    selectedTrackId,
     rows: Array.from(rowMap.values()),
   };
 }

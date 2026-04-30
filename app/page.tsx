@@ -1,59 +1,73 @@
-import Link from "next/link";
+import { CompareFilters } from "@/components/CompareFilters";
+import { CompareTable } from "@/components/CompareTable";
+import { ScrapingLegend } from "@/components/ScrapingLegend";
+import { getCompareData } from "@/lib/compare-data";
+import { prisma } from "@/lib/db";
+import type { Metadata } from "next";
+import type { ScrapingStatus } from "@/lib/types";
 
-export default function Home() {
+export const metadata: Metadata = {
+  title: "Compare setups -- iRacing Setup Comparison",
+};
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function pickInt(v: string | string[] | undefined): number | undefined {
+  if (!v) return undefined;
+  const s = Array.isArray(v) ? v[0] : v;
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function pickString(v: string | string[] | undefined): string | undefined {
+  if (!v) return undefined;
+  const s = Array.isArray(v) ? v[0] : v;
+  return s.trim() || undefined;
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+
+  const data = await getCompareData({
+    seasonId: pickInt(sp.seasonId),
+    carClass: pickString(sp.carClass),
+    weekNum: pickInt(sp.weekNum),
+    trackId: pickInt(sp.trackId),
+  });
+
+  // Pull notes for the legend (kept out of CompareData to avoid widening it).
+  const shopRows = await prisma.shop.findMany({ orderBy: { id: "asc" } });
+  const shopsWithNotes = shopRows.map((s) => ({
+    id: s.id,
+    name: s.name,
+    scrapingStatus: s.scrapingStatus as ScrapingStatus,
+    notes: s.notes,
+  }));
+
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-8">
-      <section>
-        <h1 className="text-3xl font-bold tracking-tight">
-          iRacing Setup Comparison
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-bold tracking-tight">
+          Setup comparison
         </h1>
-        <p className="mt-3 text-gray-300 leading-relaxed">
-          A side-by-side view of which iRacing setup shops sell a setup for a
-          given car, track, and season week. The goal: stop tab-flipping
-          between four shops to find one for the combo you actually need.
+        <p className="text-sm text-gray-400 max-w-3xl">
+          One row per (car, track) pair that any tracked shop sells. Cells
+          link to the shop&apos;s product page; if a price or lap time was
+          published, you&apos;ll see it inline. Shops behind login or
+          Cloudflare are surfaced as labelled empty cells -- see the legend
+          below.
         </p>
-      </section>
+      </header>
 
-      <section className="rounded-md border border-gray-800 bg-gray-900/40 p-5 text-sm text-gray-300 space-y-3">
-        <h2 className="text-base font-semibold text-gray-100">
-          What this MVP shows
-        </h2>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>
-            <span className="font-medium text-gray-100">HYMO Setups</span>,{" "}
-            <span className="font-medium text-gray-100">GO Setups</span>, and{" "}
-            <span className="font-medium text-gray-100">Majors Garage</span> --
-            scraped from public catalogs / APIs (rate-limited, robots.txt
-            respected).
-          </li>
-          <li>
-            <span className="font-medium text-gray-100">Grid-and-Go</span> --
-            authenticated scrape via the user&apos;s own paid Plus
-            subscription, run with the user&apos;s explicit consent.
-          </li>
-          <li>
-            <span className="font-medium text-gray-100">P1Doks</span> --
-            scraped from the public catalog endpoint that backs the
-            marketplace. No auth header is sent on catalog reads; the
-            comparison reflects setups any visitor can see in the SPA.
-          </li>
-          <li>
-            Lap-time signals are sparse -- none of these shops publish a
-            "fastest time" feed. The schema supports lap times but the table
-            stays mostly empty until we wire the iRacing API or driver
-            submissions.
-          </li>
-        </ul>
-      </section>
+      <CompareFilters data={data} />
 
-      <section>
-        <Link
-          href="/compare"
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
-        >
-          Open the comparison table
-        </Link>
-      </section>
+      <CompareTable rows={data.rows} shops={data.shops} />
+
+      <ScrapingLegend shops={shopsWithNotes} />
     </div>
   );
 }

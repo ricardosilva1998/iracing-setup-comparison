@@ -12,8 +12,8 @@ export function CompareFilters({ data }: Props) {
   return (
     <form
       method="get"
-      action="/compare"
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4"
+      action="/"
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4"
     >
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-gray-400">Season</span>
@@ -41,6 +41,22 @@ export function CompareFilters({ data }: Props) {
           {data.carClasses.map((c) => (
             <option key={c} value={c}>
               {c}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-gray-400">Track</span>
+        <select
+          name="trackId"
+          defaultValue={data.selectedTrackId ?? ""}
+          className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
+        >
+          <option value="">Any track</option>
+          {data.tracks.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
             </option>
           ))}
         </select>
