@@ -454,4 +454,48 @@ Format per entry:
 - **Local dev server `b67p6rqbh` was DOWN at start-of-round** (curl `000`, exit 7). QA spun up `bc8fldbsq` on port 3030 for tests and tore it down after. The user may want to restart their dev task to pick up the round 6 changes locally; the production deploy is already live and authoritative.
 - All round-5 carry-overs unchanged (Playwright-in-runner, cron caller, track normalisation, S1 seed). No new opens introduced by round 6.
 
+### 2026-04-30 07:55 — backend-dev (round 7)
+**Task:** Add Chromium to the Alpine runner stage so the Grid-and-Go scraper works in production; pass container-safe launch args; honour CHROMIUM_PATH so local runs still use Playwright's bundled binary.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{Dockerfile, lib/scrape/grid-and-go.ts}
+**Decisions:**
+- **Option (a) chosen** -- Alpine system Chromium via `apk add chromium` -- per the round-7 brief recommendation. Avoids the Debian rebase that option (b) (`node:22-slim` + `npx playwright install --with-deps chromium`) would require. node:22-alpine ships Alpine 3.22 (build log shows pkg `chromium 147.0.7727.116-r0` in main repo).
+- **Dockerfile diff (runner stage only):** added `RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont` between the runner-stage `ENV` block and the `COPY` chain; added `ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` (defensive -- runner stage has no `npm install` step but skip-download is the documented Alpine pattern); added `ENV CHROMIUM_PATH=/usr/bin/chromium-browser`. Volume entrypoint, COPY chain, EXPOSE, CMD all unchanged.
+- **lib/scrape/grid-and-go.ts diff:** `chromium.launch({ headless: true })` -> `chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] })`. The launch log line now reads either `launching headless chromium (executablePath=/usr/bin/chromium-browser)` (production) or `launching headless chromium (bundled)` (local) so we can tell from logs which path fired. The args list is the standard container-safe Chromium launch trio and is required for Alpine's chromium under an unprivileged container user.
+- **No schema, no API, no frontend changes.** Pure ops fix.
+- **Backwards-compat verified:** running `npm run scrape:grid-and-go` locally with `CHROMIUM_PATH=` (empty / unset) shows the `(bundled)` log line and uses Playwright's bundled `chrome-headless-shell` binary. No change to local dev workflow.
+**Open:** Image footprint grew from ~280 MB (round 6 runner) to ~750 MB (`OK: 748.8 MiB in 206 packages` per build log) -- larger than the brief's 150 MB estimate because `apk add chromium` pulls a deep dep graph (pipewire, libcamera, gtk3, orc, etc.). Acceptable trade-off; if image size becomes a constraint later, evaluate option (c) -- separate scraper service with Chromium, app service stays slim.
+
+### 2026-04-30 08:00 — team-qa (round 7)
+**Task:** Lint + production build + local GnG smoke (CHROMIUM_PATH unset) confirm `executablePath` env-var branching is safe for local runs.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) -> green.
+- `npm run build` (Next 16.2.4 + Turbopack) -> green; routes `/`, `/_not-found`, `/api/ingest` (dynamic), `/compare` (dynamic) all generate.
+- **Local GnG smoke (`CHROMIUM_PATH= npm run scrape:grid-and-go`):** "launching headless chromium (bundled)" log line confirms the env-var branching. Cognito auth completed; `id_token length=1202`; fetched 708 datapacks; result `inserted=0 updated=708 errors=0` (idempotent against round-5 baseline). Playwright's bundled `chrome-headless-shell` still works locally; no regression.
+- **Docker smoke skipped** -- `docker` CLI not installed in this environment (round 4/5 carryover). Mitigation: rely on Railway as build authority; the Dockerfile change is small and isolated to the runner stage.
+- **QA verdict: PASS for round 7.** team-deployment cleared to ship.
+**Open:** None new from QA. Docker CLI install for future pre-deploy smoke is still nice-to-have.
+
+### 2026-04-30 08:05 — team-deployment (round 7)
+**Task:** Commit Dockerfile + scraper edit; push to origin/main; trigger Railway deploy; verify Chromium build; trigger production GnG ingest; verify /compare; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); no other changes -- backend-dev's r7 diff already on main}
+**Decisions:**
+- **Pre-flight:** `git status` showed exactly 2 modified files (Dockerfile, lib/scrape/grid-and-go.ts). Explicit `git add Dockerfile lib/scrape/grid-and-go.ts` (no -A, no .). `.env` and `dev.db` correctly excluded.
+- **Commit `7eb40df`:** "feat(round 7): install Chromium in Alpine runner for GnG scraper". 2 files changed, 29 insertions, 2 deletions. Pushed to `origin/main` (a16b5c4..7eb40df).
+- **Railway deploy triggered** via `railway up --detach`. Deployment id `1a520565-de98-4b3f-a996-aa2a3fb25a00`. Build log confirmed `Installing chromium (147.0.7727.116-r0)`, `Installing font-freefont (20120503-r4)`, all 7 apk packages plus their transitive deps (188 packages total in apk install). Builder stage unchanged. Final runner-stage footprint: `OK: 748.8 MiB in 206 packages` (up from ~280 MB pre-round-7 = ~470 MB growth, larger than the brief's 150 MB estimate -- see backend-dev open note). Deploy SUCCESS; healthcheck on `/` passed first try.
+- **Production GnG ingest -- THE BIG ONE:** `curl -X POST $URL/api/ingest?shop=all` with bearer (read from `.env` via grep, piped to `--header @-`-equivalent file so the secret never appeared in process args). HTTP 200 in 132.5s wallclock. Response: `{"ok":true,"shop":"all","durationMs":132546,"hymo":{"fetched":952,"inserted":0,"updated":398,"errors":0},"gridAndGo":{"fetched":708,"inserted":541,"updated":167,"errors":0}}`. **First production GnG scrape ever -- 541 new SetupListings written, 167 updated, 0 errors.** Matches round 5's local baseline (708 fetched).
+- **Production /compare verification:**
+  - `GET /compare` (unfiltered): 200, 1.71 MB body. **934 GnG `/#/datapacks/<id>` Open-setup hrefs** + **351 HYMO `/setups/iracing` hrefs** rendered side-by-side. Round 6 baseline was 701 HYMO-only links; round 7 unfiltered shows 1285 product cells (HYMO + GnG combined).
+  - `GET /compare?carClass=GT3&weekNum=3`: 200, 156 KB body, 28 HYMO + 62 GnG cells. Sample lap times rendered: `1:44.540`, `1:35.666`, `1:12.840`, `1:05.490`, `1:44.040`, `1:35.513`, `7:52.020`, `1:10.720`, `1:05.461`, `1:12.570`, `1:05.870`. Lap times come from BOTH shops now -- compare GnG `1:35.513` vs HYMO `1:35.666` for the same row -- the comparison product premise finally works end-to-end.
+  - Status-dot integrity: 2x emerald (HYMO/SCRAPED), 2x teal-400 (GnG/AUTH_SCRAPED), 4x rose-500 (CDA + P1Doks blocked, two appearances each). All four shops in legend; all four shop columns in table.
+- **Runtime log tail (post-ingest):** `launching headless chromium (executablePath=/usr/bin/chromium-browser)` -> `triggering sign-in` -> `post-login redirect ok` -> `authenticated. id_token length=1202` -> `fetched 708 datapack items` -> `Grid-and-Go scraper done. fetched=708 inserted=541 updated=167 errors=0`. **No Chromium errors. No sandbox failures. No crashes. No restart cycles.** The `(executablePath=/usr/bin/chromium-browser)` line is the in-production confirmation that the env-var branching fired correctly.
+- **Round 7: SHIPPED.** The round-5 production blocker (`Executable doesn't exist at /root/.cache/ms-playwright/...`) is closed. Live URL https://iracing-setup-comparison-production.up.railway.app/compare now shows real Grid-and-Go "Open setup" links + lap times in the GnG column for the first time.
+**Open:**
+- **Cron caller** -- next obvious round. Wire a Railway cron job hitting POST `/api/ingest` weekly (Tuesday 00:30 UTC, after iRacing's Tuesday 00:00 UTC season-week rollover). The bearer token is already in Railway env vars; the cron just needs to `curl -X POST -H "Authorization: Bearer $INGEST_SECRET" $URL/api/ingest?shop=all`. ~133s execution time fits Railway cron budget.
+- **Track normalisation** still pending (Hockenheimring vs Hockenheimring Baden-Württemberg, Summit Point variants, Nürburgring Combined). Cosmetic; the comparison still works -- some cars just appear in two adjacent rows for the same physical track. Round 8 candidate.
+- **Image footprint growth (~470 MB)** is larger than the brief's estimate. If this becomes a constraint, options: (a) prune apk packages -- chromium pulls pipewire/libcamera/gtk3 transitively even though we don't need audio/video/gui; (b) move GnG to a separate service so the user-facing app stays slim. Not blocking; flagging.
+- **Cognito refresh-token rotation** still TODO once cron exists -- the id_token is ~1h-lived and each scraper run logs in fresh, which is fine for a weekly cron but not for high-frequency.
+- **2026 S1 weeks unseeded** -- HYMO has S1 backlog data we don't display.
+- **Coach Dave / P1Doks** still untouched; the round-1 audit said both were ToS / Cloudflare gated. Decision pending: drop from comparison set, or keep showing as "blocked" rows.
+- **INGEST_SECRET** is now load-bearing for cron; rotate via `railway variables --set "INGEST_SECRET=$(openssl rand -hex 32)"` and update local `.env` simultaneously.
 
