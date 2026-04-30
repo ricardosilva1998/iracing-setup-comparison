@@ -1,0 +1,82 @@
+# Weekly auto-refresh of iRacing setup data.
+#
+# Hits the production /api/ingest endpoint (HYMO + Grid-and-Go scrapers; ~133s
+# wallclock per round-7 evidence) on a Tuesday 00:30 UTC schedule, just after
+# iRacing's 00:00 UTC season-week rollover.
+#
+# Note: GitHub Actions cron is best-effort. Scheduled runs may be delayed up to
+# ~30 minutes during high cluster load (so this may actually fire at 00:30-01:00
+# UTC). That's fine -- the ingest is idempotent.
+#
+# Manual trigger: GitHub UI -> Actions -> "Refresh production data" -> Run workflow.
+# Or via CLI: gh workflow run refresh-data.yml -R ricardosilva1998/iracing-setup-comparison
+
+name: Refresh production data
+
+on:
+  schedule:
+    # Tuesday 00:30 UTC. cron syntax: minute hour day-of-month month day-of-week
+    - cron: "30 0 * * 2"
+  workflow_dispatch: {}
+
+# Prevent overlap if a scheduled run and a manual trigger collide. We do NOT
+# cancel in-progress runs because /api/ingest takes ~2-3 minutes and is
+# idempotent -- letting the first run finish is correct.
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Hit /api/ingest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: POST /api/ingest?shop=all
+        env:
+          INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
+        run: |
+          set -o pipefail
+          # --fail        -> non-2xx exits the job
+          # --silent      -> suppress progress meter
+          # --show-error  -> still print errors when --silent is set
+          # --max-time    -> hard cap at 300s (real run is ~133s; 300s leaves slack)
+          # -w "..."      -> append HTTP status + total time to the body for the log
+          # We pass the secret via -H using the env var so the literal value never
+          # appears in `ps` output.
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --max-time 300 \
+            -X POST \
+            -H "Authorization: Bearer ${INGEST_SECRET}" \
+            -w "\n---\nhttp_code=%{http_code}\ntotal_time=%{time_total}s\n" \
+            "https://iracing-setup-comparison-production.up.railway.app/api/ingest?shop=all" \
+            | tee response.txt
+      - name: Write response to job summary
+        if: always()
+        run: |
+          {
+            echo "## Ingest response"
+            echo ""
+            echo '```json'
+            # Strip the trailing "---\nhttp_code=...\ntotal_time=..." footer for the
+            # JSON pretty-print; keep it in the raw log above. If jq is missing or
+            # the body isn't valid JSON, fall back to the raw text.
+            if [ -f response.txt ]; then
+              awk '/^---$/{exit} {print}' response.txt | jq . 2>/dev/null \
+                || awk '/^---$/{exit} {print}' response.txt
+            else
+              echo "(no response captured)"
+            fi
+            echo '```'
+            echo ""
+            echo "## curl footer"
+            echo ""
+            echo '```'
+            if [ -f response.txt ]; then
+              awk 'p{print} /^---$/{p=1}' response.txt
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
