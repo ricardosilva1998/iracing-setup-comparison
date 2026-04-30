@@ -1204,3 +1204,33 @@ Format per entry:
 - **Cleanup:** ADMIN_USER + ADMIN_PASSWORD removed from .env after smoke. `grep -c '^ADMIN_' .env` → 0.
 **Bugs found:** none.
 **Open:** team-deployment must set ADMIN_USER + ADMIN_PASSWORD on Railway before deploying (not yet set per backend-dev's open item).
+
+### 2026-04-30 22:45 — team-deployment (round 18)
+**Task:** Set Railway ADMIN_USER + ADMIN_PASSWORD secrets; commit + push round-18 (admin dashboard, header polish, banner removal, legend gating); trigger Railway deploy; verify /admin auth gate + all production routes; tail logs.
+**Commits:** b672e27 — "feat(round 18): admin dashboard + header polish + remove public scraping legend"
+**Pushed to:** origin/main @ b672e27
+**PR:** n/a
+**Deploy:** railway up → 6820b52b-4a9d-41f9-b69b-42e3a7e64037 → success
+**Build time:** ~90s
+**Healthcheck:** pass
+**Logs after deploy (60s window):** clean — "Ready in 0ms", Next.js 16.2.4, no errors, no crashes, no [admin] misconfiguration warnings
+**Pre-flight:**
+- team-qa PASS confirmed (round 18, 19/19 checks, all 3 QA log entries match).
+- `git status -sb` showed exactly 9 expected files (4 new: proxy.ts, lib/admin-data.ts, app/admin/page.tsx, app/icon.svg; 5 modified: app/layout.tsx, components/CompareFilters.tsx, app/week/[weekNum]/track/[trackId]/page.tsx, .env.example, CLAUDE.md). No .env, dev.db, node_modules, .next, tsconfig.tsbuildinfo, or app/generated/.
+- Secrets scan: `.env.example` and CLAUDE.md contain only placeholder/docstring references to ADMIN_PASSWORD -- no live value in any staged file.
+- Railway secrets set before committing: ADMIN_USER=admin (inline), ADMIN_PASSWORD=<base64-16> (piped via stdin from shell variable, never echoed). Verified both present via `railway variables | grep -i admin`.
+**Production curl results:**
+- `GET /` → 200. Private MVP banner: 0. Compare nav: 0. SVG count: 1. (Banner removed, Compare nav removed, wrench icon present.)
+- `GET /icon.svg` → 200, Content-Type: image/svg+xml.
+- `GET /week/3/track/28?carClass=GT3` → 200. seasonId select: 0 (Season hidden). Scraping status: 0 (legend removed).
+- `/compare` → 307 (round-12 invariant holds). `/?weekNum=3&carClass=GT3` → 307 (legacy redirect holds).
+- `/api/ingest` GET → 405 (cron path uninterrupted by middleware).
+- `/api/ingest` POST no auth → 401.
+- `GET /admin` no auth → 401, `WWW-Authenticate: Basic realm="iRacing Setup Admin"`.
+- `GET /admin` wrong password → 401.
+- `GET /admin` correct credentials → 200. Admin dashboard header: 1. All 5 shop names present (HYMO Setups, Grid-and-Go, GO Setups, Majors Garage, P1Doks). Recent scrape runs section: 1.
+- `GET /admin/foo` no auth → 401 (sub-path matcher works).
+**Open:**
+- ADMIN_PASSWORD is now in local .env (gitignored) and Railway env vars only. No GitHub Actions secret needed (admin is human-only; cron only hits /api/ingest). Rotate via `railway variables --set "ADMIN_PASSWORD=$(openssl rand -base64 16)"` and update local .env simultaneously.
+- Round 12 carry-overs still pending: Oval class dropdown cleanup, VRS decision, INGEST_SECRET rotation cadence, image footprint trimming.
+- No /api/ingest call needed this round (UI/auth-only; volume DB unchanged).
