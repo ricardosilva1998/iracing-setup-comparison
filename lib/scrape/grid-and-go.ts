@@ -40,6 +40,7 @@
  */
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { lookupCanonicalClass } from "../car-class-canonical";
+import { canonicalizeTrackName } from "../track-canonical";
 
 const APP_HOST = "https://app.grid-and-go.com";
 const API_HOST = "https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com";
@@ -293,9 +294,10 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
             update: {},
           });
 
+          const canonicalTrackName = canonicalizeTrackName(item.trackName);
           const track = await prisma.track.upsert({
-            where: { name: item.trackName },
-            create: { name: item.trackName },
+            where: { name: canonicalTrackName },
+            create: { name: canonicalTrackName },
             update: {},
           });
 

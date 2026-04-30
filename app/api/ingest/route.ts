@@ -32,6 +32,7 @@ import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 import { runHymoScrape } from "@/lib/scrape/hymo";
 import { runGridAndGoScrape, sanitise } from "@/lib/scrape/grid-and-go";
+import { migrateTracks } from "@/lib/migrate-tracks";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // seconds; covers Cognito auth + scrape
@@ -113,10 +114,20 @@ export async function POST(request: NextRequest) {
   type ScrapeOutcome =
     | { fetched: number; inserted: number; updated: number; errors: number }
     | { skipped: string };
+  type TrackMigrationOutcome =
+    | {
+        inspected: number;
+        orphansFound: number;
+        listingsRepointed: number;
+        collisionsResolved: number;
+        orphansDeleted: number;
+      }
+    | { skipped: string };
   const result: {
     ok: boolean;
     shop: ShopFilter;
     durationMs: number;
+    tracks?: TrackMigrationOutcome;
     hymo?: ScrapeOutcome;
     gridAndGo?: ScrapeOutcome;
   } = {
@@ -126,6 +137,23 @@ export async function POST(request: NextRequest) {
   };
 
   try {
+    // Round 9: canonicalise track names BEFORE the scrapers run.
+    // This collapses any non-canonical Track rows from earlier scrapes
+    // into the canonical Track row and repoints SetupListings, so a
+    // re-run of /api/ingest is enough to fix track-name drift on
+    // production without manual SSH. Idempotent: post-first-run it's
+    // a no-op (orphansFound=0).
+    try {
+      const m = await migrateTracks(prisma);
+      result.tracks = m;
+    } catch (err) {
+      const msg = sanitise(String((err as Error).message || err), secrets);
+      console.error(`[ingest] track migration failed: ${msg}`);
+      result.tracks = { skipped: `track migration failed: ${msg.slice(0, 200)}` };
+      // Track migration failure does not block the scrapers; new scrapes
+      // will still write canonical names directly.
+    }
+
     if (shop === "hymo" || shop === "all") {
       try {
         const r = await runHymoScrape(prisma);

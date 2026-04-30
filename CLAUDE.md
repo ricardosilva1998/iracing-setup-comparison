@@ -543,3 +543,53 @@ Format per entry:
   4. **Image footprint trimming** -- ~470 MB of apk transitive deps from the round-7 chromium install (pipewire, libcamera, gtk3) we don't actually use. Optional; prune if Railway image-size limits bite.
 - **INGEST_SECRET** now lives in three places: local `.env`, Railway env vars, and GitHub Actions repo secret. **All three must rotate together** -- otherwise the cron will start 401-ing or the production `/api/ingest` will reject. Recommended rotation script: `(NEW=$(openssl rand -hex 32); railway variables --set "INGEST_SECRET=$NEW"; sed -i '' "s/^INGEST_SECRET=.*/INGEST_SECRET=$NEW/" .env; gh secret set INGEST_SECRET -R ricardosilva1998/iracing-setup-comparison --body "$NEW")`.
 
+### 2026-04-30 10:25 — backend-dev (round 9)
+**Task:** Track-name canonicalisation (round-3-shape problem applied to tracks). Build canonical module + idempotent migration + scraper updates + /api/ingest hook.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{lib/track-canonical.ts (new), lib/migrate-tracks.ts (new), lib/scrape/hymo.ts, lib/scrape/grid-and-go.ts, app/api/ingest/route.ts}
+**Decisions:**
+- **Conflict shape investigated.** SQL prefix-match (`t1.name = SUBSTR(t2.name, 1, LENGTH(t1.name))`) plus a Python token-Jaccard scan (>=0.5, with stopword stripping for "circuit/raceway/park/speedway/...") on all 73 local Track rows surfaced **13 distinct alias clusters**. The user's screenshot only showed 1 of them. Full conflict list:
+  - "Adelaide" (HYMO 11) vs "Adelaide Street Circuit" (GnG 19)
+  - "Autodromo Internazionale Enzo e Dino Ferrari (Imola)" (HYMO 20) vs bare (GnG 21) -- the user's example
+  - "Autódromo Hermanos Rodríguez (Mexico City)" (HYMO 2) vs bare (GnG 2)
+  - "Autódromo José Carlos Pace (Interlagos)" (HYMO 1) vs bare (GnG 8)
+  - "Brands Hatch" (HYMO 12) vs "Brands Hatch Circuit" (GnG 12)
+  - "Canadian Tire Motorsports Park" (GnG 3, typo with extra 's') vs "Canadian Tire Motorsport Park" (HYMO 1, official)
+  - "Circuit Park Zandvoort" (HYMO 2, deprecated name) vs "Circuit Zandvoort" (GnG 3)
+  - "Circuito de Jerez - Ángel Nieto" (GnG 3) vs bare (HYMO 1)
+  - "Donington Park Racing Circuit" (GnG 11) vs "Donington Park" (HYMO 7)
+  - "Hockenheimring Baden-Württemberg" (GnG 19) vs "Hockenheimring" (HYMO 18)
+  - "Nürburgring's GP-Strecke" (HYMO 1) vs "Nürburgring Grand-Prix-Strecke" (GnG 2)
+  - "Summit Point Raceway" (GnG 16) vs "Summit Point Motorsports Park" (HYMO 13)
+  - "WeatherTech Raceway Laguna Seca" (HYMO 16) vs "WeatherTech Raceway at Laguna Seca" (GnG 25)
+- **Kept-separate cases (legitimately different physical layouts):** "Nürburgring Combined" (124 listings, full venue), "Nürburgring Nordschleife" (8, RingMeister-only), "Nürburgring Grand-Prix-Strecke" (3, GP-only). False-positive ruled out: "Circuito de Jerez" vs "Circuito de Navarra" (Jaccard 0.5, but different cities -- kept separate).
+- **`lib/track-canonical.ts` (NEW):** pure function `canonicalizeTrackName(rawName)`. Priority: (1) explicit alias map for 9 cases that need overrides; (2) strip trailing parenthetical (`/\s*\([^()]*\)\s*$/u`); (3) strip " - <subname>" suffix only when the bare-prefix form is itself a known canonical/alias key (defensive); (4) whitespace cleanup. **Deliberately conservative:** does NOT strip "Combined/GP/Long/Short" suffixes globally (Nurburgring/Daytona variants matter). Defensive default: unknown raw names pass through unchanged. Exports `KNOWN_CANONICAL_TRACK_NAMES` (13 strings).
+- **`lib/migrate-tracks.ts` (NEW):** `migrateTracks(prisma): Promise<TrackMigrationResult>`. Pure async, idempotent. Reads all Track rows, computes orphan list (canonical !== name), runs ALL writes inside one `prisma.$transaction`. Per orphan: upserts canonical Track row, repoints SetupListing children one-by-one (composite-key collision check on each), deletes the orphan Track. **Collision policy:** when target (shopId, carId, canonicalTrackId, seasonWeekId) already exists, prefers the row with non-null LapTime; tiebreaker is later `updatedAt`. Loser is deleted (LapTime cascades).
+- **Scraper updates:** both `lib/scrape/hymo.ts:267` and `lib/scrape/grid-and-go.ts:297` now call `canonicalizeTrackName(rawName)` before `prisma.track.upsert({ where: { name } })`. New scrapes write canonical names directly.
+- **`/api/ingest` hook:** `migrateTracks(prisma)` runs as the FIRST step inside the POST handler (before HYMO, before GnG). Result added to response under `tracks: { ... }`. Wrapped in its own try/catch so a migration failure does NOT block the scrapers. Response shape additive: `{ ok, shop, durationMs, tracks?, hymo?, gridAndGo? }`. Non-breaking for the GitHub Actions cron.
+- **Local end-to-end on dev.db:** pre-migration 73 tracks / 928 SetupListings. Run #1 of `migrateTracks`: `inspected=73, orphansFound=13, listingsRepointed=117, collisionsResolved=0, orphansDeleted=13`. Run #2: `orphansFound=0` (idempotent). Post-state: 60 tracks, 928 SetupListings. Acceptance SQL returns 0 rows.
+- **/api/ingest local smoke (port 3030):** `POST /api/ingest?shop=hymo` -> 200 in 8.0s with `tracks: { inspected:60, orphansFound:0, ... }` + `hymo: { fetched:952, inserted:0, updated:398, errors:0 }` (matches round-7 baseline exactly). Run #2: 11.6s, identical shape.
+- **Local /compare verification:** GET /compare?carClass=GT3&weekNum=3 -> 118 Open-setup links (matches round 7-8 baseline 56+62). Imola: 1 row in unfiltered HTML, "(Imola)" gone. Hockenheimring: 1, no Baden-Württemberg. Summit Point Motorsports Park: 1, no Raceway. Adelaide Street Circuit: 1, no bare "Adelaide".
+- **Lint+build:** `npm run lint` (tsc --noEmit) green. `npm run build` (Next 16.2.4 + Turbopack) green; routes `/`, `/_not-found`, `/api/ingest` (dynamic), `/compare` (dynamic) all generate.
+- **No schema change.** No frontend change. No new attack surface (same `/api/ingest` auth, same Prisma client, same scraper hosts). team-security not needed.
+**Open:**
+- Migration's collision-policy code path was NOT exercised on local dev.db (collisionsResolved=0). It's defensive against the production case where prior partial repoints left both canonical+orphan rows. Will exercise in production if any composite-key collision exists; logged in response payload.
+- Round-8 carry-overs unchanged (Cognito refresh-token rotation, 2026 S1 seed, CDA/P1Doks decision, image footprint).
+
+### 2026-04-30 10:35 — team-qa (round 9)
+**Task:** Verify track-canonical migration end-to-end: lint/build green, migration idempotent locally, /api/ingest local smoke, /compare consolidation, conflict-SQL post-fix, no listing loss.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) -> green on the new `lib/track-canonical.ts` + `lib/migrate-tracks.ts` + scraper edits + ingest route extensions.
+- `npm run build` (Next 16.2.4 + Turbopack) -> green. 4 routes generated; standalone trace unchanged.
+- **Acceptance SQL post-migration on dev.db:** prefix-match conflict query returns **0 rows** (was 8 rows pre-migration). PASS.
+- **Migration idempotency:** ran `migrateTracks(prisma)` directly via `tsx`. Run 1 -> orphansFound=13, listingsRepointed=117, collisionsResolved=0, orphansDeleted=13. Run 2 -> all zeros. PASS.
+- **Listing-count integrity:** pre-migration 928 SetupListings; post-migration 928 SetupListings. **No listing data lost.** Track count 73 -> 60 (-13, exactly the orphan count). PASS.
+- **Spot-check the user's reported case:** `Track.name = "Autodromo Internazionale Enzo e Dino Ferrari"` (id 48), 41 listings, shops = "HYMO Setups, Grid-and-Go" (was 2 separate rows pre-migration: HYMO 20 + GnG 21 = 41 — they merged). Same shape for Hockenheimring (37 listings, both shops), Summit Point Motorsports Park (29, both), WeatherTech Raceway at Laguna Seca (41, both). PASS.
+- **Nürburgring family integrity:** 3 distinct rows preserved -- Combined (124 listings, both shops), Nordschleife (8, GnG only), Grand-Prix-Strecke (3, both shops -- this row absorbed HYMO's "Nürburgring's GP-Strecke" via the alias map, gaining HYMO coverage where previously it was GnG-only). PASS.
+- **/api/ingest local smoke (port 3030):** `POST /api/ingest?shop=hymo` (run 1): 200 in 8.0s, body `{"ok":true,"shop":"hymo","durationMs":7935,"tracks":{"inspected":60,"orphansFound":0,...},"hymo":{"fetched":952,"inserted":0,"updated":398,"errors":0}}`. Run 2: 200 in 11.6s, identical. Full idempotency confirmed.
+- **/compare smoke (port 3030):** GET / -> 200; GET /compare unfiltered -> 200, 1.85 MB, 1635 Open-setup links (round 8 baseline 1638; -3 from collapsed orphan rows, no listings lost). GET /compare?carClass=GT3&weekNum=3 -> 200, 143 KB, **118 Open setup links** (matches round 7-8 baseline exactly). Lap-time samples: 1:05.461, 1:05.490, 1:05.556, 1:05.651, 1:05.661 etc. HTML grep: "(Imola)" -> 0, "Baden-Württemberg" -> 0, "Summit Point Raceway" -> 0, ">Adelaide<" -> 0.
+- **QA verdict: PASS for round 9.** team-deployment cleared to ship.
+**Open:**
+- Production migration counts will likely exceed dev.db's because production has been ingested twice (round 5 + round 7 + cron). Some collisions are possible there; the migration's collision policy is the safety net.
+- Verify production `tracks: { ... }` block in the post-deploy ingest response.
+
