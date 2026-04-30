@@ -889,3 +889,34 @@ Format per entry:
 - `Oval` class dropdown entry from MG-only cars -- round-11 carry-over.
 - All other round-12 carry-overs unchanged.
 
+### 2026-04-30 15:30 — team-deployment (round 13)
+**Task:** Commit + push round-13 car-name canonicalisation; trigger Railway deploy; run production /api/ingest?shop=all to collapse orphan Car rows; verify production /compare deduplication; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); no other code changes -- backend-dev's r13 diff already on main}
+**Decisions:**
+- **Pre-flight:** `git status` showed exactly the 9 expected files (7 modified + 2 untracked new: `lib/car-name-canonical.ts`, `lib/migrate-cars.ts`). Explicit `git add` for those 9 paths only. Secrets scan on staged diff: grep hits were all in CLAUDE.md prose (rotation-script documentation referencing env-var names / expansion syntax; no literal secret values in any source file). Clean.
+- **Commit `b13a9de`:** "feat(round 13): car-name canonicalisation -- merge alias rows + strip MG slug-leak suffixes". 9 files changed, 851 insertions, 178 deletions. New: `lib/car-name-canonical.ts` (543 L), `lib/migrate-cars.ts` (204 L). Modified: all 5 scrapers + `app/api/ingest/route.ts` + `CLAUDE.md`. Pushed `3915a44..b13a9de` to `origin/main`.
+- **Railway deploy triggered** via `railway up --detach`. Deployment id `42a6896b-5ef3-4273-90f1-925d84b91f23`. Production URL responded 200 on `/` within ~90s. Healthchecks: `/` -> 200, `/compare` -> 307 (redirect to `/` per round-12 routing), `/api/ingest` GET -> 405. Deploy SUCCESS.
+- **Production /api/ingest?shop=all (THE BIG ONE):** HTTP 200 in **320.3s wallclock** (under the 600s `maxDuration` envelope). Full response:
+  `{"ok":true,"shop":"all","durationMs":320203,"tracks":{"inspected":128,"orphansFound":0,...},"cars":{"inspected":169,"orphansFound":53,"listingsRepointed":307,"collisionsResolved":0,"orphansDeleted":53},"hymo":{"fetched":952,"inserted":0,"updated":398,"errors":0},"gridAndGo":{"fetched":710,"inserted":0,"updated":710,"errors":0},"gosetups":{"fetched":331,"inserted":14,"updated":317,"errors":0},"majorsGarage":{"fetched":1295,"inserted":9,"updated":1286,"errors":0},"p1doks":{"fetched":397,"inserted":0,"updated":397,"errors":0}}`.
+  - **Car migration actual vs predicted:** `orphansFound=53` (predicted ~70), `listingsRepointed=307` (predicted ~480), `collisionsResolved=0`. 53 orphan car rows collapsed, 307 listings repointed to canonical names, 0 data conflicts. The lower-than-predicted numbers reflect that some cars predicted as duplicates didn't exist in production (were already canonical from prior scrapes or were gosetups/P1Doks-specific).
+  - **gosetups: 14 inserted** (new — W8 tabs went live on the Google Sheet since the round-11 last ingest; cron is automatically picking them up). **MG: 9 inserted** (new datapacks since round-11).
+  - **tracks block: orphansFound=0** — round-9 canonical state still holding.
+- **Production /compare verification:**
+  - `GET /?carClass=GT3&weekNum=3` -> 200. `Aston Martin Vantage GT3 EVO` appears (8 occurrences = header label + row repetitions; no orphan `>Aston Martin GT3<` anywhere). `>Aston Martin GT3 Evo<` -> 0. HYMO 28 links, GnG 31, GO 22, MG 0 (MG doesn't carry GT3 W3 for this car set), P1Doks 21.
+  - `GET /?carClass=GT3` (unfiltered) -> 200. `Aston Martin Vantage GT3 EVO` 40 appearances (canonical, expected multi-row across tracks). `>Aston Martin GT3[^A-Za-z]` -> 0, `>Aston Martin GT3 Evo<` -> 0. Both orphan variants gone.
+  - `GET /?carClass=GT4` -> 200. `BMW M4 GT4` appears 16 times (P1Doks-only; 17 listings expected, the table renders the car name once per row header + shop cell). Confirmed distinct from `BMW M4 G82 GT4` and `BMW M4 G82 GT4 Evo` (3 separate rows as per round-13 brief).
+  - Unfiltered total deep-links: 2031 (round-11 baseline 1760; +271 net new cells from car-dedup repoints + the 23 new gosetups/MG inserts). 5-shop legend intact.
+- **Runtime log tail (post-ingest):** Mounting volume on /var/lib/containers/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Ready in 0ms -> HYMO scraper start -> courtesy GET /setups/iracing -> POST api.hymosetups.com -> fetched 952 -> HYMO done. -> Grid-and-Go scraper start -> launching headless chromium (executablePath=/usr/bin/chromium-browser) -> triggering sign-in -> post-login redirect ok -> authenticated. id_token length=1202 -> fetched 710 datapack items -> Grid-and-Go done. -> gosetups scraper start -> fetched 57 iRacing products -> 26S2 WEEK 1..7 each parsed 38-49 rows -> WEEK 8..13 skipped (sig matches default) -> gosetups done. fetched=331 inserted=14 updated=317 errors=0 -> Majors Garage scraper start -> 13 cursor pages -> total 1295 -> MG done. fetched=1295 inserted=9 updated=1286 errors=0 -> P1Doks scraper start -> 4 paginated POSTs (offset 0/100/200/300) -> 397 items -> P1Doks done. fetched=397 inserted=0 updated=397 errors=0. **No errors. No Chromium failures. No restart cycles.**
+- **Round 13: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app -- the user's reported `Aston Martin GT3 EVO` / `Aston Martin Vantage GT3 EVO` duplicate-row issue is fixed. 53 orphan car rows collapsed, 307 listings repointed, 5 shops side-by-side on each canonical (car, track, week) triple.
+**Open:**
+- **migrateCars is now idempotent and wired to every /api/ingest call.** Future weekly cron runs (Tuesday 00:30 UTC) will run the migrate-cars pass first; once production state is canonical (which it now is), the `cars: { orphansFound: 0 }` block will be a no-op (sub-second). No ongoing performance impact.
+- **gosetups W8+ tabs** are auto-detected by sig-match-default; as gosetups publishes new weeks the cron will pick them up without code changes.
+- **Round-13 carry-overs (unchanged from round-12):**
+  1. 24 MG slug-leak car names (Dirt/sprint/oval one-word "tracks" leaking into car names via slug parsing) -- single-shop rows, no comparison fragmentation. Low priority.
+  2. Track prefix-match conflicts (14 pairs from round-10 new shops) -- round-10 carry-over.
+  3. `Oval` carClass dropdown entry from MG-only cars -- round-11 carry-over, cosmetic.
+  4. VRS decision + creds (carry-over from round 10).
+  5. `INGEST_SECRET` rotation cadence policy.
+  6. Image footprint trimming (~470 MB of apk transitive deps from r7 chromium install).
+- **No INGEST_SECRET rotation needed this round.**
+
