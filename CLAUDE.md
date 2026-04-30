@@ -697,3 +697,92 @@ Format per entry:
   4. `INGEST_SECRET` rotation cadence policy.
   5. Image footprint trimming (carry-over from r7 -- not pressing).
 
+### 2026-04-30 12:00 — backend-dev (round 11)
+**Task:** P1 probe + P2 implement P1Doks scraper. Verdict: AUTOMATABLE + DATA RICH.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{scripts/probe-p1doks.ts (new), scripts/probe-p1doks-step2.ts (new), lib/scrape/p1doks.ts (new), scripts/scrape-p1doks.ts (new), app/api/ingest/route.ts, app/layout.tsx, app/page.tsx, lib/seed.ts, lib/track-canonical.ts, lib/car-class-canonical.ts, package.json}
+**Decisions:**
+- **P1 verdict (probed via Playwright + intercepted XHR + replayed POST):** AWS Cognito (ca-central-1, client `6mu7svlaa4q8i1mvkeknhsruo8`); **no MFA, no captcha, no anti-bot WAF**. Tokens land in `localStorage` under `CognitoIdentityServiceProvider.<clientId>.<userId>.{id,access,refresh}Token`. **Critical surprise:** `POST https://api.p1doks.com/ql/data-packs` is **PUBLIC** -- the SPA does NOT send an Authorization header on it (verified by request-header sniff). The 401s in round-1's audit were on `/api/setups`, `/api/products`, `/api/telemetry/sessions/for-picker` -- guesses that don't actually exist. Per-user endpoints (`/users/subscription-status`, `/users/ownerships/check/...`) DO require Bearer idToken, but the comparison product premise doesn't need them.
+- **Data shape:** `POST /ql/data-packs` body `{limit, offset, filters: {Year:{_eq:"YYYY"}, Season:{_eq:"N"}}, sort: ["lap_minutes","lap_seconds","lap_hundredths"]}`. Response `{data_pack: [...], data_pack_aggregated: [{count: {id: TOTAL}}]}`. Each item: `id` (UUID), `Year/Season/Week/Series/Track/Car/creator/price` plus discrete `lap_minutes/lap_seconds/lap_hundredths` (the "hundredths" field is actually thousandths -- "048" -> 0.048s; matches `lap_time_formatted` "0:17.048"). 397 datapacks for 2026 S2.
+- **Scraper deviation from "mirror GnG":** built as plain undici (HYMO pattern), no Playwright, no Cognito login. Safer (no creds in flight), politer (no headless browser to maintain), faster (~5s vs ~60s GnG), more faithful to how the SPA itself fetches. P1DOKS_EMAIL/PASSWORD remain on Railway in case the public path closes; they're not consumed by the scraper today.
+- **Politeness:** 3s + 1s jitter between paginated POSTs, retry 429/503/network-error with 5/10/20s backoff, 3 retries max. UA includes contact email. On 401 the scraper fails loudly (canary for the public path flipping gated). PAGE_SIZE=100 -> 4 calls for 397 items.
+- **`/api/ingest` extended:** added `runP1DoksScrape` import + `p1doks` shop case + 5th branch in `?shop=all`. Bumped `maxDuration` 300s -> 600s (round 10's 4-shop run was 316.7s; 5 shops would have exceeded the old envelope).
+- **`lib/seed.ts`:** P1Doks Shop row promoted `API_LOCKED` -> `AUTH_SCRAPED` (matches GnG). Notes updated to describe the public catalog model.
+- **`lib/track-canonical.ts`:** 8 new aliases for P1Doks track names (`Donington Park Circuit`, `Autódromo Internacional do Algarve` (+ASCII variant), `Mount Panorama Motor Racing Circuit`, `Nurburgring Grand-Prix-Strecke` and `Nurburgring Nordschleife` (no umlaut), `Autodromo Jose Carlos Pace`, `St Petersburg`).
+- **`lib/car-class-canonical.ts`:** 4 new NAME_RULES (`IR-?18`, `IndyCar`, `SF-?23`, `M2 CS`) so P1Doks-only cars (`IR18 IndyCar Open Wheel`, `BMW M2 CS`) don't fall through to series-as-class fallback.
+- **Banner / home copy:** updated to reflect P1Doks scraped (was "P1Doks gated").
+- **Local end-to-end (wiped dev.db, all 5 scrapers):** HYMO 387/11, GnG 543/167, GO 320/11, MG 563/732, P1Doks 374/23 -- 0 errors anywhere. Final state: 169 cars, 128 tracks, 2187 SetupListings, 2045 LapTimes. Idempotent re-run of P1Doks: 0/397/0. Round-3 invariant holds (0 cars under multi-class).
+- **5-shop GT3 W7 cross-shop coverage spot-check:** Acura NSX GT3 EVO 22 at Algarve / Imola / Mugello / Brands Hatch / Fuji each have all 5 shops side-by-side. The product premise.
+**Open:**
+- 1 minor: `Oval` carClass label leaks through from Majors Garage NASCAR/oval cars where slug-derived names lack a real class (round-10 carry-over, not P1Doks-introduced). Cosmetic.
+- Cognito refresh-token rotation moot for P1Doks since we're not authenticating; still moot for GnG weekly cron.
+- 17 cars unique to MG + ~30 short-oval/dirt tracks unique to MG -- coverage gaps not bugs.
+- `gosetups` Google Sheet still W1..W7 only (W8+ skipped via sig-match-default).
+
+### 2026-04-30 12:08 — team-security (round 11)
+**Task:** Audit cred handling for P1Doks scraper + probe artefacts. .env hygiene, no creds in source/logs, sanitise present, no token persistence.
+**Files:** none modified (audit only)
+**Decisions:**
+- **`.env` gitignored** (`.gitignore:34`); `git check-ignore -v .env` confirms. Recursive grep for `P1DOKS_PASSWORD\s*=\s*[^$]` across the repo (excluding .env/node_modules/.git/app/generated/.next/dev.db/*.log) returns zero matches.
+- **Password value (20 chars) does not appear in any source file.** Recursive `grep -F` against the actual password value returns zero non-`.env` matches. `ricardomrbs2014` (the P1Doks email's local part) does not appear in any source file either.
+- **`redact()` / `sanitise()` / `safeUrl()` patterns** present in P1Doks files: 27 occurrences across `lib/scrape/p1doks.ts`, `scripts/probe-p1doks.ts`, `scripts/probe-p1doks-step2.ts`. Probe scripts use the same secrets-stripping pattern as round 2's `probe-grid-and-go.ts`.
+- **No traces / videos / screenshots / HARs:** zero matches for `recordVideo|recordHar|tracing\.start` in P1Doks files. Probes run `headless: true`, no `recordVideo`, no `recordHar`. No screenshots written.
+- **Token persistence:** the production scraper (`lib/scrape/p1doks.ts`) does NOT consume P1DOKS_EMAIL / P1DOKS_PASSWORD at all -- the catalog endpoint is unauthenticated. Tokens never enter the scrape path. The Cognito creds remain on Railway as future-proofing; they are unused by today's code path.
+- **Probe log scrub:** `/tmp/p1doks-probe.log` and `/tmp/p1doks-probe-step2.log` removed after the probe. The localStorage `user` blob (which contained the user's name + email) was sanitised via `sanitise()` before being printed; tmp logs cleared as a defence-in-depth precaution.
+- **Auth header masking in probe:** the request-interceptor in `probe-p1doks-step2.ts` masks `Authorization` header values to `<bearer length=N>` and `Cookie` header values to `<cookies length=N>` before logging.
+- **No new attack surface in production:** /api/ingest auth model unchanged (same constant-time bearer check, same INGEST_SECRET). New scraper hits a single read-only POST against `api.p1doks.com`. No DB schema change.
+- **DB safety:** all Prisma queries parameterised (composite-key upsert + findUnique). No `$queryRaw` / `$executeRaw` in `lib/scrape/p1doks.ts`. `npm audit` advisory state unchanged (5 moderate transitive carry-overs).
+**Open:**
+- If P1Doks ever closes the public catalog path, the next round needs to wire Cognito (ca-central-1) login mirroring GnG's eu-central-1 flow. The Cognito creds on Railway are pre-positioned for that.
+- INGEST_SECRET rotation cadence still TODO (round 8 carry-over).
+
+### 2026-04-30 12:14 — team-qa (round 11)
+**Task:** Verify P1Doks scraper end-to-end: lint/build green, scraper idempotent, /compare 5-shop coverage, /api/ingest local route works, no listing loss vs round 10 baseline.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) -> green on lib/scrape/p1doks.ts + canonical updates + ingest extension.
+- `npm run build` (Next 16.2.4 + Turbopack) -> green. 4 routes generated; standalone trace unchanged.
+- **Acceptance: P1Doks scraper runs cleanly.** Wiped dev.db, ran the 5-scraper sequence: HYMO 387/11/0, GnG 543/167/0, GO 320/11/0, MG 563/732/0, **P1Doks 374/23/0** (397 fetched). Idempotent P1Doks re-run: 0/397/0. PASS.
+- **All 397 P1Doks listings have non-null lap times** (validated via `LEFT JOIN LapTime` count -- 0 nulls). PASS.
+- **Track canonicalisation post-fix:** `Donington Park` (45), `Algarve International Circuit` (90), `Mount Panorama Circuit` (20), `Autódromo José Carlos Pace` (17), `Nürburgring Nordschleife` (14), `Nürburgring Grand-Prix-Strecke` (6), `St. Petersburg Grand Prix` (82) -- each is exactly 1 row, no aliases left dangling. PASS.
+- **Car-class invariant holds:** SQL conflict scan returns 0 rows. The new NAME_RULES catch `IR18 IndyCar Open Wheel -> Formula`, `BMW M2 CS -> Production`, `SF23 -> Formula`. PASS.
+- **Local /api/ingest smoke (port 3000, prod build):** `POST /api/ingest?shop=p1doks` -> 200 in 8.6s with `tracks: { orphansFound: 0 }` + `p1doks: { fetched: 397, inserted: 0, updated: 397, errors: 0 }` (third idempotent invocation). Bad bearer -> 401. GET -> 405. PASS.
+- **Local /compare smoke:** `/` -> 200; `/compare` unfiltered -> 200, 3.55 MB body, 1760 lap-time spans (round-10 baseline 1660 -> +100 net cells). Per-host: HYMO 351, GnG 469, GO 318, MG 522, **P1Doks 348**. `/compare?carClass=GT3&weekNum=7` -> 200, 235 KB, 5-shop coverage (GnG 31, HYMO 28, P1Doks 28, MG 28, GO 22 cells). PASS.
+- **No regression on round-3/round-9 invariants:** car-class single-value (0 conflicts), track canonicalisation (0 aliases dangling), composite-key upsert idempotent.
+- **Local /compare evidence of 5-shop coverage on the same triple:** Acura NSX GT3 EVO 22 at Algarve / Imola / Mugello / Brands Hatch / Fuji each show all 5 shops. PASS.
+- **Surfaced (out of scope):** the `Oval` carClass label appears in the dropdown -- coming from MG NASCAR/oval cars whose slug-derived names didn't match any NAME_RULES. Round-10 carry-over, not P1Doks-introduced. Round 12 cleanup if cosmetics matter.
+- **QA verdict: PASS for round 11.** team-deployment cleared to ship.
+**Open:**
+- Production maxDuration 600s envelope post-bump -- needs first-deploy confirmation that `?shop=all` fits.
+- `Oval` class dropdown entry (cosmetic, MG-rooted; round 12 candidate).
+
+### 2026-04-30 12:30 — team-deployment (round 11)
+**Task:** Set Railway P1DOKS_EMAIL/P1DOKS_PASSWORD secrets; commit + push round-11; trigger Railway deploy; production /api/ingest?shop=p1doks isolated test then ?shop=all; verify production /compare 5-shop layout; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); no other code changes -- backend-dev's r11 diff already on main}
+**Decisions:**
+- **Secrets set without echoing.** `railway variables --set "P1DOKS_EMAIL=$EMAIL_VAL" --skip-deploys` and same for `P1DOKS_PASSWORD`, where `$EMAIL_VAL` / `$PWD_VAL` are subshell-substituted from `grep ^X= .env | cut -d= -f2-`. Lengths verified post-set: P1DOKS_EMAIL=25, P1DOKS_PASSWORD=20 (matches local). The Cognito creds are pre-positioned for the future case where the public catalog path closes; today's scraper does not consume them.
+- **Pre-flight:** `git status` showed exactly the 11 expected files. Explicit `git add` for those 11 paths. No `.env`, `dev.db`, `node_modules`, `.next`, `tsconfig.tsbuildinfo`, `app/generated/`, or temp logs in the staged set.
+- **Commit `6a4ea9c`:** "feat(round 11): add P1Doks scraper (5th shop), bump ingest maxDuration to 600s". 11 files changed, 1261 insertions, 12 deletions. New: lib/scrape/p1doks.ts (404 L), scripts/probe-p1doks.ts (340 L), scripts/probe-p1doks-step2.ts (236 L), scripts/scrape-p1doks.ts (32 L). Modified: app/api/ingest/route.ts (+28 L for p1doks branch + maxDuration 300->600), lib/seed.ts (P1Doks Shop status promoted), lib/track-canonical.ts (+8 aliases), lib/car-class-canonical.ts (+4 NAME_RULES), app/layout.tsx (banner copy), app/page.tsx (P1Doks bullet copy), package.json (+scrape:p1doks script). Pushed `c8c06b1..6a4ea9c` to origin/main.
+- **Railway deploy triggered explicitly** via `railway up --detach` (matches r5..r10 pattern -- GitHub auto-deploy is not wired). Build logs URL: `https://railway.com/project/164f2e76-c754-47dd-8c16-05cc6f264837/service/b40601ae-dfc6-4e6c-aa2c-7b5538b87c06?id=78c2af82-4206-4d14-a4a9-5bd225c4b8ec`. Deployment id `78c2af82-4206-4d14-a4a9-5bd225c4b8ec`. Polled live URL until banner copy reflected the new build (`Private MVP -- HYMO, Grid-and-Go, GO Setups, Majors Garage, and P1Doks all scraped`). Healthcheck: `/` -> 200 (12.8 KB), `/compare` -> 200, `/api/ingest` GET -> 405.
+- **Isolated production /api/ingest?shop=p1doks (FIRST PROD HIT):** HTTP 200 in 35.4s wallclock. Response: `{"ok":true,"shop":"p1doks","durationMs":35152,"tracks":{...orphansFound:0...},"p1doks":{"fetched":397,"inserted":374,"updated":23,"errors":0}}`. **All 374 P1Doks rows landed in production on the first try, 0 errors.**
+- **Production /api/ingest?shop=all (THE BIG ONE):** HTTP 200 in **361s wallclock** (well under the new 600s `maxDuration` envelope; the round-10 300s ceiling would have failed). Response: `{"ok":true,"shop":"all","durationMs":361045,"tracks":{...orphansFound:0...},"hymo":{"fetched":952,"inserted":0,"updated":398,"errors":0},"gridAndGo":{"fetched":710,"inserted":0,"updated":710,"errors":0},"gosetups":{"fetched":331,"inserted":0,"updated":331,"errors":0},"majorsGarage":{"fetched":1295,"inserted":0,"updated":1295,"errors":0},"p1doks":{"fetched":397,"inserted":0,"updated":397,"errors":0}}`. **All 5 shops fully idempotent with 0 errors. P1Doks's track aliases collapsed prior orphans (none on first deploy because the isolated p1doks call already landed canonical names).**
+- **Production /compare verification:**
+  - `GET /compare` (unfiltered) -> 200, **3.55 MB body** (round-10 baseline 2.96 MB; +0.59 MB from P1Doks). **1760 lap-time spans** (round-10 baseline 1660; **+100 net new cells**).
+  - Per-host link counts: HYMO 351, Grid-and-Go 469, GO Setups 318, Majors Garage 522, **P1Doks 348**. 5-shop legend, 5 columns.
+  - `GET /compare?carClass=GT3&weekNum=7` -> 200, 235 KB, **5-shop side-by-side coverage** (GnG 31, HYMO 28, P1Doks 28, MG 28, GO 22 cells). 134 lap times in this slice. Sample times: 1:22.140, 1:20.957, 1:21.044, 1:21.099, 1:21.475 -- 5 shops competing within 1.2s on the same combo.
+  - Sample P1Doks deep-link rendered: `https://p1doks.com/data-pack/3a189c8e-c947-4082-8483-10c0665b8d31` (UUID format).
+  - Banner copy reflects round-11 state: "Private MVP -- HYMO, Grid-and-Go, GO Setups, Majors Garage, and P1Doks all scraped".
+- **Runtime log tail (~30s post-ingest, JSON mode):** P1Doks scraper start -> 4 paginated POSTs (offset 0/100/200/300) -> "P1Doks scraper done. fetched=397 inserted=374 updated=23 errors=0" (first run) and "fetched=397 inserted=0 updated=397 errors=0" (second). **No errors, no Chromium crashes (none expected -- the P1Doks scraper doesn't use Playwright), no restart cycles.** All other shops also reported clean runs.
+- **Round 11: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app/compare now shows 5 active shops side-by-side. The `?carClass=GT3&weekNum=7` view is the proof: 5 shops with lap times within 1.2s of each other on the same (car, track, week) triple.
+**Open:**
+- **Production `?shop=all` ran 361s** -- under the new 600s envelope but the round-12 backlog item to "split cron or raise limit" (round-10's open-list item 2) is now closed by raising the limit. If shops keep growing, a future round may want to split.
+- **Round 12 backlog (in priority order):**
+  1. Mobile UI for the now-5-column table (was 4 before; now noticeably tight on mobile per round 10's open-list item 3 -- now upgraded to round 12 priority).
+  2. `Oval` carClass dropdown entry cleanup -- MG NASCAR/oval cars whose slug-derived names lack a real class. Cosmetic, round 11 surfaced but didn't fix.
+  3. VRS decision + creds (carry-over from r10).
+  4. `INGEST_SECRET` rotation cadence policy (carry-over from r8).
+  5. Image footprint trimming (~470 MB of apk transitive deps from r7's chromium install we don't fully use; carry-over, low priority).
+  6. P1Doks Cognito fallback path (only if the public catalog endpoint ever flips gated; creds are pre-positioned on Railway).
+  7. gosetups W8+ tabs as the season progresses (auto-picked-up by future cron).
+- **No `INGEST_SECRET` rotation needed this round.**
+- **Three secrets still live on Railway:** `GRID_AND_GO_*` (used), `P1DOKS_*` (set, unused today), `INGEST_SECRET` (used). All remain in 3-place sync (local .env, Railway, GitHub Actions repo secret) -- rotation script unchanged from r8.
+
