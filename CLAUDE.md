@@ -499,3 +499,47 @@ Format per entry:
 - **Coach Dave / P1Doks** still untouched; the round-1 audit said both were ToS / Cloudflare gated. Decision pending: drop from comparison set, or keep showing as "blocked" rows.
 - **INGEST_SECRET** is now load-bearing for cron; rotate via `railway variables --set "INGEST_SECRET=$(openssl rand -hex 32)"` and update local `.env` simultaneously.
 
+### 2026-04-30 09:30 — backend-dev (round 8)
+**Task:** Wire a weekly auto-refresh that hits production `/api/ingest?shop=all`. Decision (made by team-leader before dispatch): GitHub Actions schedule, not Railway cron -- free, lives in the existing repo, no extra Railway service to manage. Schedule `30 0 * * 2` (Tuesday 00:30 UTC, just after iRacing's 00:00 UTC season-week rollover).
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{.github/workflows/refresh-data.yml (new), CLAUDE.md}
+**Decisions:**
+- **New workflow `refresh-data.yml`** triggers on `schedule` (`30 0 * * 2`) and `workflow_dispatch` (manual button + `gh workflow run` CLI). Single job `refresh` on `ubuntu-latest`, `timeout-minutes: 10`. Real ingest runs ~133s (round-7 evidence: `durationMs":132546`); the 600s job timeout / 300s `curl --max-time` give 2x+ slack.
+- **curl invocation:** `--fail` (non-2xx exits the job), `--silent --show-error` (clean logs but errors still surface), `--max-time 300`, and `-w "\n---\nhttp_code=%{http_code}\ntotal_time=%{time_total}s\n"` so the response body is followed by a `---` separator + status code + total time. Body + footer are `tee`'d to `response.txt` for the second step's job-summary pretty-print.
+- **Secret hygiene:** `INGEST_SECRET` is exposed to the curl step via `env:` block (`INGEST_SECRET: ${{ secrets.INGEST_SECRET }}`), then passed to `-H "Authorization: Bearer ${INGEST_SECRET}"` via shell expansion. The literal token never appears in `ps`/process args. GitHub Actions log redaction will mask the secret value in any echoed line.
+- **Concurrency guard:** group `refresh-data`, `cancel-in-progress: false`. If the Tuesday cron fires while a manual `workflow_dispatch` is mid-flight (or vice-versa), the second run queues until the first finishes. We never cancel an in-progress run because the ingest is idempotent and finishing it is the right outcome.
+- **Job-summary step** (`if: always()`) writes a fenced JSON block (jq pretty-print of the body, with awk fallback if jq is missing or body is not JSON) plus the curl footer (status + time) to `$GITHUB_STEP_SUMMARY`. Visible in the Actions UI without opening the raw log.
+- **Cron caveat documented in workflow comments:** GitHub Actions cron is best-effort and may be delayed up to ~30 min during high cluster load, so the actual fire time is `00:30-01:00 UTC` Tuesday. Idempotent ingest absorbs the variance.
+- **No app code touched.** No Dockerfile, no Prisma, no /compare. Pure CI wiring; will not trigger a Railway redeploy (Railway GitHub auto-deploy is not wired -- round 5/6/7 evidence).
+**Open:**
+- **Repo secret `INGEST_SECRET` not yet set** -- team-deployment will set it via `gh secret set` (subshell-substitution pattern so the value never lands in shell history) before triggering the manual smoke run.
+- First scheduled run will fire next Tuesday (2026-05-05 00:30 UTC); the manual `gh workflow run` smoke is what proves the wiring today.
+- All round-7 carry-overs unchanged (track normalisation, Cognito refresh-token rotation, S1 seed, CDA / P1Doks decision, image footprint).
+
+### 2026-04-30 09:35 — team-deployment (round 8)
+**Task:** Set the GitHub repo secret `INGEST_SECRET`; commit + push the new workflow yaml; trigger a manual `workflow_dispatch` smoke run; verify the run succeeded with the expected JSON response; spot-check production /compare post-run.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); no other changes -- backend-dev's r8 workflow yaml was committed in `640f0cd`}
+**Decisions:**
+- **Pre-flight:** `gh auth status` confirmed login as `ricardosilva1998` with `repo` scope (full repo, including secrets). `git status` showed exactly 2 changes: `M CLAUDE.md` (backend-dev r8 log entry) + `?? .github/` (new workflow yaml). No `.env`, `dev.db`, `node_modules`, `.next`, `tsconfig.tsbuildinfo`, or `app/generated/` in the staged set.
+- **Secret set without echoing:** `gh secret set INGEST_SECRET -R ricardosilva1998/iracing-setup-comparison --body "$(grep ^INGEST_SECRET /Users/ricardosilva/projects/iracing-setup-comparison/.env | cut -d= -f2)"` -- the 64-char hex value reaches gh via subshell substitution; the literal token never appears in shell history or process args. Verified with `gh secret list -R ricardosilva1998/iracing-setup-comparison` -> `INGEST_SECRET    2026-04-30T08:30:24Z` (one secret, name only, value masked by GitHub).
+- **Commit `640f0cd`:** "ci(round 8): weekly cron to refresh production data via GitHub Actions". Single file: `.github/workflows/refresh-data.yml` (+82 lines). Pushed to `origin/main` (`1481c6b..640f0cd`). Push succeeded; remote SHA matches local.
+- **No Railway redeploy triggered** -- consistent with round 5/6/7 evidence that GitHub auto-deploy is not wired for this service. The workflow yaml is CI metadata only; the runtime container is unaffected.
+- **Manual smoke (`workflow_dispatch`):** `gh workflow run refresh-data.yml -R ricardosilva1998/iracing-setup-comparison --ref main` -> dispatched run **`25155559170`** against SHA `640f0cd`. Polled with `gh run view ... --json status` every 15s.
+  - **Status: completed. Conclusion: success.**
+  - Wallclock createdAt 08:30:57Z -> updatedAt 08:32:48Z = **1m51s** total job time (under the 10-min `timeout-minutes` and well within the 300s `curl --max-time`). curl-reported `total_time=101.126696s` for the ingest itself; the rest is runner provisioning + the summary step.
+  - **Ingest response (from job log):** `{"ok":true,"shop":"all","durationMs":100764,"hymo":{"fetched":952,"inserted":0,"updated":398,"errors":0},"gridAndGo":{"fetched":710,"inserted":2,"updated":708,"errors":0}}`. `http_code=200`. **0 errors across both shops.**
+  - **HYMO:** matches round-7 baseline exactly (952 fetched, 398 updated, 0 inserted -> idempotent; no new HYMO products this week).
+  - **Grid-and-Go:** **710 fetched (+2 since round 7's 708)**. 2 new datapacks inserted, 708 updated, 0 errors -- GnG published 2 new datapacks in the past ~25 hours; the cron caught them. End-to-end auto-refresh works.
+- **Production /compare verification post-run:**
+  - `GET /compare?carClass=GT3&weekNum=3` -> 200, **155.7 KB body**, **56 HYMO links + 62 GnG links** rendered side-by-side. Lap-time samples: `1:05.461`, `1:05.490`, `1:05.556`, `1:05.651`, `1:05.653`, `1:05.661`, `1:05.675`, `1:05.696` (top 8 unique mm:ss.SSS strings on the page). Both shops still rendering; the cron preserved the round-7 product premise.
+  - `GET /compare` (unfiltered) -> 200, **1.71 MB body** (matches round-7 baseline byte-for-byte +-), **700 HYMO links + 938 GnG links** (vs round-7 934 GnG -> +4 because the 2 new GnG datapacks each render twice in the page: row + cell). All 4 shops in legend, all 4 columns in table. No 500s, no missing cells.
+- **Round 8: SHIPPED.** First scheduled cron run will fire next Tuesday **2026-05-05 00:30 UTC** (subject to GitHub Actions' best-effort delay of up to ~30 min). Manual `workflow_dispatch` is wired and proven; the ad-hoc refresh button in the GitHub UI works.
+**Open:**
+- **GitHub Actions cron is best-effort.** Scheduled fires may slip 0-30 min during peak load. Idempotent ingest absorbs the variance; not a blocker.
+- **Cognito refresh-token rotation** is now even more relevant -- the cron logs in fresh from scratch each Tuesday (~1h-lived id_token), which is fine for weekly. If we ever increase frequency, store the refresh_token and reuse it.
+- **Round 9 backlog (in priority order):**
+  1. **Track normalisation** (Hockenheimring vs Hockenheimring Baden-Württemberg, Summit Point variants, Nürburgring Combined). Cosmetic but visible on /compare -- some cars currently appear in two adjacent rows for the same physical track.
+  2. **2026 S1 seed** -- HYMO has S1 backlog data we don't display because no Season row exists for it. Add the season + 13 weeks; existing scrapers will populate.
+  3. **Coach Dave / P1Doks decision** -- drop from comparison set, or keep showing as "blocked" rows with the rose-500 dot.
+  4. **Image footprint trimming** -- ~470 MB of apk transitive deps from the round-7 chromium install (pipewire, libcamera, gtk3) we don't actually use. Optional; prune if Railway image-size limits bite.
+- **INGEST_SECRET** now lives in three places: local `.env`, Railway env vars, and GitHub Actions repo secret. **All three must rotate together** -- otherwise the cron will start 401-ing or the production `/api/ingest` will reject. Recommended rotation script: `(NEW=$(openssl rand -hex 32); railway variables --set "INGEST_SECRET=$NEW"; sed -i '' "s/^INGEST_SECRET=.*/INGEST_SECRET=$NEW/" .env; gh secret set INGEST_SECRET -R ricardosilva1998/iracing-setup-comparison --body "$NEW")`.
+
