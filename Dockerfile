@@ -26,6 +26,21 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
+# Install Chromium for the Grid-and-Go scraper. Playwright's bundled
+# chrome-headless-shell isn't available on Alpine (no apt/yum installer), so we
+# use Alpine's packaged Chromium and tell Playwright to launch it via
+# CHROMIUM_PATH. nss / freetype / harfbuzz / ca-certificates / ttf-freefont
+# are required at runtime by Chromium itself.
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static

@@ -169,8 +169,20 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
   }
   const weekByNum = new Map(season.weeks.map((w) => [w.weekNum, w]));
 
-  console.log("launching headless chromium");
-  const browser = await chromium.launch({ headless: true });
+  // In production (Alpine runner) Chromium is installed via `apk add chromium`
+  // and lives at /usr/bin/chromium-browser; CHROMIUM_PATH points there. Locally
+  // (dev / CI without that env var) we fall through to Playwright's bundled
+  // chrome-headless-shell binary. The args list is required for Chromium to
+  // launch inside an unprivileged container.
+  const chromiumPath = process.env.CHROMIUM_PATH;
+  console.log(
+    `launching headless chromium${chromiumPath ? ` (executablePath=${chromiumPath})` : " (bundled)"}`,
+  );
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: chromiumPath || undefined,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  });
   const context = await browser.newContext({
     userAgent:
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
