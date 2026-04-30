@@ -593,3 +593,34 @@ Format per entry:
 - Production migration counts will likely exceed dev.db's because production has been ingested twice (round 5 + round 7 + cron). Some collisions are possible there; the migration's collision policy is the safety net.
 - Verify production `tracks: { ... }` block in the post-deploy ingest response.
 
+### 2026-04-30 10:50 — team-deployment (round 9)
+**Task:** Commit + push round-9 track-canonicalisation; trigger Railway deploy; run production /api/ingest?shop=all to migrate production data; verify production /compare consolidation; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); no other code changes -- backend-dev's r9 diff already on main}
+**Decisions:**
+- **Pre-flight:** `git status` clean except for the 6 expected files. Removed local `dev.db.backup-r9` (not a tracked file). Explicit `git add` for the 6 paths only (no -A). No `.env`, `dev.db`, `node_modules`, `.next`, `tsconfig.tsbuildinfo`, or `app/generated/` in the staged set.
+- **Commit `883649a`:** "feat(round 9): track-name canonicalisation -- merge alias rows". 6 files changed: 457 insertions, 4 deletions. New: lib/track-canonical.ts (207L), lib/migrate-tracks.ts (164L). Modified: app/api/ingest/route.ts (+28L for migration hook), lib/scrape/{hymo,grid-and-go}.ts (+1 import +2 lines each), CLAUDE.md (+50L for round-9 entries). Pushed `39a88b1..883649a` to origin/main.
+- **Railway deploy triggered explicitly** via `railway up --detach` (matches r5/r6/r7/r8 pattern -- GitHub auto-deploy is not wired). Deployment id `5225f780-b980-4e06-bf54-53c260bcaca4`. Polled via `railway logs` until "Ready in 0ms" surfaced (~75s wallclock from upload to Ready). Healthcheck on `/` -> 200 (12.4 KB), `/compare` -> 200 (1.71 MB), `/api/ingest` GET -> 405 with helpful hint.
+- **Production /api/ingest?shop=all (THE BIG ONE):** `curl -X POST` with bearer (read from `.env` via grep+pipe, never echoed). HTTP **200 in 97.6s wallclock**. Response: `{"ok":true,"shop":"all","durationMs":97124,"tracks":{"inspected":73,"orphansFound":13,"listingsRepointed":117,"collisionsResolved":0,"orphansDeleted":13},"hymo":{"fetched":952,"inserted":0,"updated":398,"errors":0},"gridAndGo":{"fetched":710,"inserted":0,"updated":710,"errors":0}}`. **Production migration counts mirror local exactly** -- 13 orphan tracks collapsed, 117 SetupListings repointed, 0 collisions. No data lost. Production cron baseline (round-8 last refresh) was 710 GnG datapacks; our re-run idempotently updated all 710.
+- **Production /compare verification (THE PRODUCT-LEVEL FIX):**
+  - `GET /compare` (unfiltered) -> 200, 1.56 MB body, **1640 Open setup links** (round-8 baseline 1638 -- matches within +2 = 2 new GnG datapacks since last cron). 13 alias variants all consolidated:
+    - "Autodromo Internazionale Enzo e Dino Ferrari": **1 row** ("(Imola)" suffix gone, count=0). The user's reported case is fixed.
+    - "Hockenheimring": **1 row** ("Baden-Württemberg" gone, count=0).
+    - "Summit Point Motorsports Park": **1 row** ("Raceway" gone, count=0).
+    - "WeatherTech Raceway at Laguna Seca": **1 row** (bare "WeatherTech Raceway Laguna Seca" gone, count=0).
+    - "Adelaide Street Circuit": **1 row** (bare "Adelaide" gone, count=0).
+    - "Donington Park": **1 row** ("Donington Park Racing Circuit" gone, count=0).
+  - `GET /compare?carClass=GT3&weekNum=3` -> 200, 121 KB body, **118 Open setup links** (round 7-8 baseline 56 HYMO + 62 GnG = 118; matches exactly). Lap-time samples: 1:05.461, 1:05.490, 1:05.556, 1:05.651, 1:05.653, 1:05.661, 1:05.675, 1:05.696. Both shops still rendering side-by-side.
+- **Status-dot integrity:** unchanged from r8 (verified via lighter spot grep). 4 shops in legend. 4 shop columns. No regressions.
+- **Runtime log tail (~30s post-ingest, JSON mode):** Mounting volume on /var/lib/containers/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Ready in 0ms -> HYMO scraper start -> courtesy GET /setups/iracing -> POST api.hymosetups.com -> fetched 952 -> HYMO scraper done. fetched=952 inserted=0 updated=398 errors=0 -> Grid-and-Go scraper start -> launching headless chromium (executablePath=/usr/bin/chromium-browser) -> triggering sign-in -> post-login redirect ok -> authenticated. id_token length=1202 -> fetched 710 datapack items -> Grid-and-Go scraper done. fetched=710 inserted=0 updated=710 errors=0. **No errors. No restart cycles. No Chromium failures.** The migration step ran silently (the migrateTracks function does not console.log -- that's intentional; the `tracks: { ... }` block in the JSON response is the canonical signal).
+- **Round 9: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app/compare now shows **one row per physical track** for all 13 alias clusters. The user's "two adjacent rows for the same Imola track" is fixed; same for Hockenheim, Summit Point, Adelaide, Brands Hatch, Canadian Tire, Zandvoort, Jerez, Donington, Mexico City, Interlagos, GP-Strecke, WeatherTech.
+- **No new attack surface.** Same `/api/ingest` bearer-auth path, same Prisma connection, same scraper hosts. team-security re-audit not required.
+**Open:**
+- The migration in `/api/ingest` is now idempotent. Future `/api/ingest` calls (weekly cron Tuesdays 00:30 UTC) will run `migrateTracks` first; once the production state is canonical (which it now is), each subsequent call's `tracks: { orphansFound: 0, ... }` block will be a no-op (microseconds). No ongoing performance impact.
+- **Round 10 backlog (unchanged carry-overs from round 8):**
+  1. **2026 S1 seed** -- HYMO has S1 backlog data we don't display because no Season row exists for it. Add the season + 13 weeks; existing scrapers will populate.
+  2. **Coach Dave / P1Doks decision** -- drop from comparison set (cleaner UI), or keep showing as "blocked" rows with the rose-500 dot.
+  3. **Image footprint trimming** -- ~470 MB of apk transitive deps from r7's chromium install (pipewire, libcamera, gtk3) we don't actually use. Optional; prune if Railway image-size limits bite.
+  4. **Cognito refresh-token rotation** -- weekly cron is fine on a fresh login, but if cadence ever increases, store the refresh_token and reuse.
+- **Track-name canonicalisation is now closed.** Future shops that use yet-another track-name variant will need a one-line addition to `TRACK_ALIASES` in `lib/track-canonical.ts`; the unknown-name pass-through ensures their data still flows in even before the override is added. Same maintenance pattern as round 3's car-class canonical.
+- **No INGEST_SECRET rotation needed this round.**
+
