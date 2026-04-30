@@ -4,6 +4,7 @@ import { SCRAPING_STATUS_LABELS } from "@/lib/types";
 type Props = {
   rows: CompareRow[];
   shops: { id: number; name: string; scrapingStatus: ScrapingStatus }[];
+  hideTrackColumn?: boolean;
 };
 
 function formatLapTime(seconds: number | null | undefined): string {
@@ -58,7 +59,7 @@ function Cell({ cell }: { cell: CompareCell }) {
   );
 }
 
-export function CompareTable({ rows, shops }: Props) {
+export function CompareTable({ rows, shops, hideTrackColumn = false }: Props) {
   if (rows.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-gray-700 p-8 text-center text-gray-400 text-sm">
@@ -80,7 +81,9 @@ export function CompareTable({ rows, shops }: Props) {
               Car
             </th>
             <th className="border border-gray-800 px-3 py-2">Class</th>
-            <th className="border border-gray-800 px-3 py-2">Track</th>
+            {!hideTrackColumn && (
+              <th className="border border-gray-800 px-3 py-2">Track</th>
+            )}
             {shops.map((s) => (
               <th key={s.id} className="border border-gray-800 px-3 py-2">
                 <div>{s.name}</div>
@@ -102,9 +105,11 @@ export function CompareTable({ rows, shops }: Props) {
               <td className="border border-gray-800 px-3 py-2 text-gray-300">
                 {r.carClass}
               </td>
-              <td className="border border-gray-800 px-3 py-2 text-gray-300">
-                {r.trackName}
-              </td>
+              {!hideTrackColumn && (
+                <td className="border border-gray-800 px-3 py-2 text-gray-300">
+                  {r.trackName}
+                </td>
+              )}
               {r.cells.map((cell) => (
                 <Cell key={cell.shopId} cell={cell} />
               ))}

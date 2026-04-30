@@ -947,3 +947,62 @@ Format per entry:
 **Open:**
 - VRS revisit trigger: only worth revisiting if the user moves to VRS Premium AND accepts a monthly cookie-export chore. The round-14 backend-dev entry is the canonical record for that future round.
 - All round-13 carry-overs unchanged (24 MG single-shop slug-leak rows, `Oval` dropdown leak, 14 round-10 track prefix-match pairs, mobile UI, `INGEST_SECRET` rotation cadence, image footprint trimming).
+
+### 2026-04-30 14:00 — backend-dev (round 15)
+**Task:** Add data-layer functions for the new 3-level navigation hierarchy (weeks → tracks → comparison table). Data layer only; frontend-dev owns the page/component layer.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/lib/compare-data.ts
+**Decisions:**
+- Added 4 new exported types co-located in `lib/compare-data.ts` (no `lib/types.ts` split — these are page-payload shapes, not scraper primitives): `WeekSummary { id, weekNum, label, setupCount }`, `WeekListData`, `TrackSummary { id, name, setupCount }`, `TrackListData`.
+- `getWeekList(filters: { seasonId?, carClass? }): Promise<WeekListData>` — returns all 13 SeasonWeek rows with `setupCount` from a single `groupBy` (no N+1). Weeks with zero matching SetupListings get `setupCount: 0` so the frontend can dim them.
+- `getTrackList(weekNum, filters): Promise<TrackListData>` — returns ALL tracks in the DB (alphabetical) with per-track `setupCount` from a single `groupBy` against the resolved SeasonWeek. Invalid `weekNum` (e.g. 99) returns all tracks with `setupCount: 0`; no 500.
+- `getTrackCompareData(weekNum, trackId, filters): Promise<CompareData>` — thin wrapper over unchanged `getCompareData` for the innermost table page. `getCompareData` kept verbatim; `app/page.tsx` still imports it until frontend-dev replaces that file.
+- Smoke counts (dev.db, 2187 SetupListings): `getWeekList({})` → 13 weeks, W1=327..W13=0. `getWeekList({ carClass: "GT3" })` → 13 weeks, W1=134..W9=0. `getTrackList(3, {})` → 128 tracks, 45 with setups. `getTrackList(3, { carClass: "GT3" })` → 128 tracks, 8 with GT3 setups (Hockenheim=50, Nürburgring Combined=14, Sebring=4…). `getTrackList(99, {})` → 128 tracks, 0 non-zero. `npm run lint` (tsc --noEmit) → green.
+**Open:**
+- frontend-dev owns: `app/page.tsx` (week cards, calls `getWeekList`), `app/week/[weekNum]/page.tsx` (track cards, calls `getTrackList`), `app/week/[weekNum]/track/[trackId]/page.tsx` (comparison table, calls `getTrackCompareData`), `app/compare/page.tsx` (307 redirect to `/`).
+- `components/CompareFilters.tsx` imports `CompareData` type — frontend-dev should audit whether it needs updating for the narrowed filter surface on the track page (weekNum + trackId now come from path params).
+
+### 2026-04-30 14:30 — frontend-dev (round 15)
+**Task:** Build the 3-level navigation UI: home = week cards, /week/[weekNum] = track cards, /week/[weekNum]/track/[trackId] = comparison table.
+**Files:**
+- `components/WeekCard.tsx` (new)
+- `components/TrackCard.tsx` (new)
+- `components/CompareFilters.tsx` (modified — drop Track/Week selects, add `action` prop, 5-col → 3-col grid, narrow `FilterData` type)
+- `components/CompareTable.tsx` (modified — add optional `hideTrackColumn` prop)
+- `app/page.tsx` (replaced — now renders `getWeekList` + 13 `WeekCard`s; legacy `?weekNum=N` redirect to `/week/N`)
+- `app/week/[weekNum]/page.tsx` (new — 128 `TrackCard`s filtered by week)
+- `app/week/[weekNum]/track/[trackId]/page.tsx` (new — cars × shops table for one track/week)
+**Decisions:**
+- **Dim-when-zero:** both `WeekCard` and `TrackCard` apply `opacity-40 pointer-events-none` + `tabIndex=-1` + `aria-disabled` when `setupCount === 0`. Cards with data get a subtle hover lift (`-translate-y-0.5 shadow-md`). Mirrors the user's "Show them dimmed/disabled" answer.
+- **CompareFilters narrow type:** extracted a local `FilterData` type (`seasons`, `carClasses`, `selectedSeasonId`, `selectedCarClass`) — structural match to `WeekListData`, `TrackListData`, and `CompareData`, so all three pages can pass their data without casting. The `action` prop defaults to `"/"` so the home page call site is unchanged.
+- **`hideTrackColumn` on CompareTable:** when true, omits the `<th>Track</th>` header and each row's `<td>{r.trackName}</td>`. Used on the track detail page where the track is already in the page header. Default `false` keeps `app/page.tsx` (legacy) and any future caller unaffected.
+- **Breadcrumbs:** week page shows `← All weeks` (links to `/?seasonId=...&carClass=...`); track page shows `← Week N` (links to `/week/N?...`). Filters travel in both directions via querystring.
+- **Legacy URL chain:** `/?weekNum=3&carClass=GT3` → 307 `/week/3?carClass=GT3`. `/compare?weekNum=3&carClass=GT3` → 307 `/?weekNum=3&carClass=GT3` (round-12 redirect, untouched) → 307 `/week/3?carClass=GT3`. Two-hop chain is intentional and fine.
+- **Route grid:** `/` (ƒ dynamic), `/week/[weekNum]` (ƒ), `/week/[weekNum]/track/[trackId]` (ƒ), `/api/ingest` (ƒ), `/compare` (ƒ). Build clean, tsc --noEmit clean.
+**Open:**
+- `getCompareData` in `lib/compare-data.ts` is still exported but no longer called by any page (was only called by the old `app/page.tsx`). Backend-dev can remove it in a future round once confirmed no other caller exists (grep shows zero imports after this round's changes to `app/page.tsx`).
+- Track page does two Prisma calls for `shopsWithNotes` + an optional `track.findUnique` for the name fallback, on top of `getTrackCompareData`. Could be batched into `getTrackCompareData`'s return shape in a future round to reduce DB round-trips.
+- Legacy `getCompareData` can be deleted once `app/page.tsx` is replaced; deletion belongs to frontend-dev's round.
+
+### 2026-04-30 15:00 — team-qa (round 15)
+**Task:** Verify the 3-level nav hierarchy (week cards → track cards → comparison table) introduced by backend-dev + frontend-dev round 15.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) → green. `npm run build` (Next 16.2.4 + Turbopack) → green. Routes emitted: `/` (ƒ), `/_not-found` (○), `/api/ingest` (ƒ), `/compare` (ƒ), `/week/[weekNum]` (ƒ), `/week/[weekNum]/track/[trackId]` (ƒ). All 6 correct.
+- Dev server on port 3030 (3000 had a lingering process on PID 58309 which was killed; server torn down after testing).
+- **Home page `/`:** 200. 13 `href="/week/N"` cards rendered (one per Week 1..13). `opacity-40` + `pointer-events-none` applied on 4 zero-count weeks. Filter form: `name="seasonId"` ×1, `name="carClass"` ×1; `name="weekNum"` = 0; `name="trackId"` = 0. `action="/"`. PASS.
+- **GT3 home `/?carClass=GT3`:** 200. Card hrefs preserve `seasonId=1&carClass=GT3`. Week 3 card shows "127 setups" — matches DB (`SELECT COUNT(*) FROM SetupListing sl JOIN Car c ON c.id=sl.carId JOIN SeasonWeek sw ON sw.id=sl.seasonWeekId WHERE c.carClass='GT3' AND sw.weekNum=3` = 127). `opacity-40` count rises to 10 (more zero weeks under GT3). PASS.
+- **Legacy redirects:** `/?weekNum=3` → 307 `/week/3`; `/?weekNum=3&carClass=GT3` → 307 `/week/3?carClass=GT3`; `/?weekNum=3&trackId=28&carClass=GT3` → 307 `/week/3?carClass=GT3` (trackId dropped). All correct.
+- **`/week/3`:** 200. 128 TrackCard hrefs (`/week/3/track/`). Back link `href="/"`. `opacity-40` + `pointer-events-none` on 166 zero-count tracks (128 tracks × some duplicated DOM nodes). Form action `/week/3`. `name="weekNum"` = 0. PASS.
+- **`/week/3?carClass=GT3`:** 200. 128 track cards rendered (always-show-all for dim UX). `carClass=GT3` preserved in card hrefs. PASS.
+- **`/week/99`:** 200, no 500. PASS.
+- **Track page `/week/3/track/28?carClass=GT3`:** 200. Track column absent (0 occurrences of `>Track<` and 0 matches for `<th[^>]*>.*Track.*</th>`). 5 shop columns present (HYMO Setups / Grid-and-Go / GO Setups / Majors Garage / P1Doks in `<th><div>` wrappers). 11 `</tr>` = 1 header + 10 data rows (DB: 10 distinct GT3 cars at Hockenheim W3). `<h1>Hockenheimring</h1>`. Back link `href="/week/3?seasonId=1&carClass=GT3"`. P1Doks deep-links: 10; P1Doks price `$XX.XX`: 0 (price suppression intact). PASS.
+- **`/compare` redirect chain:** `/compare` → 307 `/`; `/compare?carClass=GT3&weekNum=3` → 307 `/?carClass=GT3&weekNum=3` → 307 `/week/3?carClass=GT3`. `curl -L` follows both hops to a 200 at `/week/3?carClass=GT3`. PASS.
+- **Regression invariants:** round-3 car multi-class conflict SQL = 0 rows; round-9 canonical orphans (Hockenheim, Imola each 1 row); round-13 Aston Martin Vantage GT3 EVO = 1 row; round-14 `VRS_*` absent from `.env`, `scripts/probe-vrs.ts` absent. All PASS.
+- **`/api/ingest`:** GET → 405; POST without bearer → 401; POST with valid bearer `?shop=hymo` → 200 `{ ok: true, tracks: { orphansFound: 0 }, hymo: { fetched: 952, errors: 0 } }`. PASS.
+- **Note (not a regression):** The prefix-match orphan-track SQL returns 14 rows, but inspection shows these are all false positives: the word "Circuit" appears as both a bare 1-listing MG slug-parse leftover and as a prefix of legitimate track names (Circuit de Spa, Circuit Zandvoort, etc.). The round-9 specific aliases (Hockenheim Baden-Württemberg, Summit Point Raceway, etc.) are all gone. `Brands Hatch Circuit` (57 listings) is the canonical name; bare "Brands Hatch" does not exist.
+- **QA verdict: PASS for round 15.** team-deployment is cleared to ship.
+**Open:**
+- `getCompareData` is still exported from `lib/compare-data.ts` but has zero import sites. Safe to delete in a future round; confirmed by grep.
+- `Oval` carClass dropdown entry (MG slug-parse leftover; round-12 carry-over).
+- 14 prefix-match false-positive track rows (round-10 carry-over; cosmetically fine).
+- Mobile UI for 5-column table (round-12 carry-over).

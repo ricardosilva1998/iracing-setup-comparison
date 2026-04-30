@@ -1,19 +1,27 @@
-import type { CompareData } from "@/lib/compare-data";
+type FilterData = {
+  seasons: { id: number; year: number; quarter: number; label: string }[];
+  carClasses: string[];
+  selectedSeasonId: number | null;
+  selectedCarClass: string | null;
+};
 
 type Props = {
-  data: CompareData;
+  data: FilterData;
+  /** Defaults to "/" — pass the current path for week/track pages. */
+  action?: string;
 };
 
 /**
- * Server-rendered GET form -- submits to /compare with query params.
+ * Server-rendered GET form — submits with query params.
  * No client JS, no useState. Selecting + Apply navigates.
+ * Week and Track come from the URL path on sub-pages, not this form.
  */
-export function CompareFilters({ data }: Props) {
+export function CompareFilters({ data, action = "/" }: Props) {
   return (
     <form
       method="get"
-      action="/"
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4"
+      action={action}
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4"
     >
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-gray-400">Season</span>
@@ -41,38 +49,6 @@ export function CompareFilters({ data }: Props) {
           {data.carClasses.map((c) => (
             <option key={c} value={c}>
               {c}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-gray-400">Track</span>
-        <select
-          name="trackId"
-          defaultValue={data.selectedTrackId ?? ""}
-          className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
-        >
-          <option value="">Any track</option>
-          {data.tracks.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-gray-400">Week</span>
-        <select
-          name="weekNum"
-          defaultValue={data.selectedWeekNum ?? ""}
-          className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
-        >
-          <option value="">Any week</option>
-          {data.weeks.map((w) => (
-            <option key={w.id} value={w.weekNum}>
-              {w.label}
             </option>
           ))}
         </select>
