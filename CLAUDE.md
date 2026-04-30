@@ -1006,3 +1006,28 @@ Format per entry:
 - `Oval` carClass dropdown entry (MG slug-parse leftover; round-12 carry-over).
 - 14 prefix-match false-positive track rows (round-10 carry-over; cosmetically fine).
 - Mobile UI for 5-column table (round-12 carry-over).
+
+### 2026-04-30 18:55 — team-deployment (round 15)
+**Task:** Commit + push round-15 (3-level navigation: weeks -> tracks -> comparison table); trigger Railway deploy; verify all 7 production healthchecks; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); all other code changes staged by backend-dev + frontend-dev}
+**Decisions:**
+- **Pre-flight:** `git status --short` showed exactly 5 modified files (CLAUDE.md, app/page.tsx, components/CompareFilters.tsx, components/CompareTable.tsx, lib/compare-data.ts) + 3 untracked entries (app/week/ directory covering both new page files, components/TrackCard.tsx, components/WeekCard.tsx). Total 9 files = the 5 modified + 4 new expected by the brief. No .env, dev.db, node_modules, .next, tsconfig.tsbuildinfo, app/generated/, or probe scripts in the set. Secrets scan on staged diff: CLAUDE.md grep matches are all historical log prose (env var names in descriptive text, not credential values). CLEAN.
+- **Commit `c01796b`:** "feat(round 15): 3-level navigation -- weeks -> tracks -> comparison table". 9 files changed, 585 insertions, 77 deletions. New: app/week/[weekNum]/page.tsx, app/week/[weekNum]/track/[trackId]/page.tsx, components/TrackCard.tsx, components/WeekCard.tsx. Pushed `04720e9..c01796b` to origin/main. Push succeeded; remote SHA matches local.
+- **No ingest call needed.** UI-only change; volume DB data from round 13 is still current.
+- **Railway deploy triggered explicitly** via `railway up --detach` (matches r5..r14 pattern -- GitHub auto-deploy is not wired). Deployment id `547dc397-38f9-4138-b60b-d31591859262`. Build took ~100s; new routes went live at 18:54:30 (detected by homepage polling for `/week/N` hrefs).
+- **Production healthchecks (all 7 PASS):**
+  1. `GET /` -> 200 | 13 `/week/N` hrefs present (1..13). PASS.
+  2. `GET /?weekNum=3` -> 307 `Location: https://iracing-setup-comparison-production.up.railway.app/week/3`. Legacy redirect works. PASS.
+  3. `GET /week/3` -> 200 | 128 TrackCard hrefs (/week/3/track/N format). PASS.
+  4. `GET /week/3?carClass=GT3` -> 200 | 128 TrackCard hrefs rendered (dim vs bright toggled by count, all hrefs present). PASS.
+  5. `GET /week/3/track/28?carClass=GT3` -> 200 (Hockenheimring) | 5 shop columns present | 0 `>Track<` th occurrences (Track column hidden via `hideTrackColumn` prop) | 100 "Open setup" links. PASS.
+  6. `GET /compare` -> 307 `Location: https://iracing-setup-comparison-production.up.railway.app/` (round-12 redirect intact). PASS.
+  7. P1Doks price suppression: 16 P1Doks hrefs on /week/3/track/28; 0 contain a `$XX.XX` string. PASS.
+- **Runtime log tail (~30s post-deploy):** Mounting volume on /var/lib/containers/railwayapp/bind-mounts/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Ready in 0ms. No error spew, no crashes, no restart cycles.
+- **Round 15: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app/ now shows 13 WeekCards. Clicking a week shows 128 TrackCards (dim when zero count for the selected filter). Clicking a track shows the cars x shops comparison table with the Track column hidden.
+**Open:**
+- `getCompareData` dead export in lib/compare-data.ts (round-15 QA carry-over; safe to delete).
+- `Oval` carClass dropdown entry (MG slug-parse leftover; round-12 carry-over).
+- 14 prefix-match false-positive track rows (cosmetically fine; carry-over).
+- Mobile UI for 5-column table (carry-over).
+- No INGEST_SECRET rotation needed this round.
