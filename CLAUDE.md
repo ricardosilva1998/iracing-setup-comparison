@@ -1031,3 +1031,30 @@ Format per entry:
 - 14 prefix-match false-positive track rows (cosmetically fine; carry-over).
 - Mobile UI for 5-column table (carry-over).
 - No INGEST_SECRET rotation needed this round.
+
+### 2026-04-30 13:00 — frontend-dev (round 16)
+**Task:** Sort track cards so non-zero-setup tracks appear first; make all cards (WeekCard + TrackCard) uniform height.
+**Files:** components/WeekCard.tsx, components/TrackCard.tsx, app/week/[weekNum]/page.tsx
+**Decisions:**
+- **Sort:** `app/week/[weekNum]/page.tsx` spreads `data.tracks` into a new array and sorts by `setupCount > 0` (0 first) then `name.localeCompare`. Only the track page is sorted; week ordering on `/` is intentionally unchanged (numeric 1..13 per the round-15 design).
+- **Uniform height:** Both `WeekCard` and `TrackCard` use `h-24` (96 px fixed height). Changed `flex flex-col gap-1` to `flex flex-col justify-between` so the setup count subtitle always sits at the bottom regardless of name length. Added `line-clamp-2 leading-tight` to the name span to truncate long track names (e.g. "Autodromo Internazionale Enzo e Dino Ferrari") at 2 lines with ellipsis. `h-28` was not needed — 96 px with 2-line clamp fits comfortably.
+- Smoke verified: `/week/3?carClass=GT3` returns 128 cards; first 8 are `ok` (1–55 setups), card 9 onwards are `DIM` (0 setups, alphabetical). Non-zero group is also alphabetical: Canadian Tire → Hockenheimring → Nürburgring Combined → Sachsenring → Sebring → Shell V-Power → Sonoma → Summit Point.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green (4 routes unchanged).
+**Open:** Same carry-overs as round 15 (getCompareData dead export, Oval class, 14 prefix-match tracks, mobile 5-column table).
+
+### 2026-04-30 13:15 — team-qa (round 16)
+**Task:** Verify track-sort + uniform-card-height UI polish (round 16).
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) -> green. `npm run build` (Next 16.2.4 + Turbopack) -> green; 4 routes unchanged.
+- **Track sort (/week/3 unfiltered):** 128 TrackCards parsed. 45 with setups, 83 without. Sort violations: 0. All 45 non-zero cards precede all 83 zero-count cards. Alpha within each group verified (the apparent `Autódromo Hermanos Rodríguez` > `Autodromo Internazionale del Mugello` difference is locale-collation not an actual violation -- JavaScript `localeCompare` sorts these correctly). PASS.
+- **Track sort (/week/3?carClass=GT3):** 8 non-zero cards (Canadian Tire -> Hockenheimring -> Nürburgring Combined -> Sachsenring -> Sebring -> Shell V-Power -> Sonoma -> Summit Point), then 120 dim. Sort violations: 0. Matches frontend-dev smoke exactly. PASS.
+- **Track sort (/week/99):** 128 TrackCards all dim, alphabetical. No 500. PASS.
+- **h-24 on WeekCards (/):** 13/13 WeekCards have h-24. PASS.
+- **h-24 on TrackCards (/week/3):** 128/128 TrackCards have h-24. PASS.
+- **h-24 on TrackCards (/week/3?carClass=GT3):** 128/128. PASS.
+- **flex flex-col justify-between + line-clamp-2:** both present in HTML on all TrackCards and WeekCards. PASS.
+- **Regression invariants:** `/` -> 200, 13 WeekCards; `/week/3/track/28?carClass=GT3` -> 200, 100 Open-setup links, 0 price occurrences, 0 Track-column occurrences, 5 shops present; `/compare` -> 307 to `/`; `/?weekNum=3&carClass=GT3` -> 307 to `/week/3?carClass=GT3`; Aston Martin Vantage GT3 EVO = 1 row, class=GT3 in DB. All PASS.
+- **Track "55" carry-over confirmed:** Track id=112, name="55" -- the round-10 MG slug-leak carry-over; not a new regression this round.
+- **QA verdict: PASS for round 16.** team-deployment cleared to ship.
+**Open:** Same carry-overs as round 15 (getCompareData dead export, Oval class, 14 prefix-match tracks, mobile 5-column table, track "55" slug-leak).

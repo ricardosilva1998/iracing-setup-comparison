@@ -12,7 +12,7 @@ export function TrackCard({ track, href }: Props) {
     <Link
       href={href}
       className={[
-        "rounded-md border border-gray-800 bg-gray-900/60 p-4 flex flex-col gap-1",
+        "h-24 rounded-md border border-gray-800 bg-gray-900/60 p-4 flex flex-col justify-between",
         "transition-transform transition-shadow duration-150",
         empty
           ? "opacity-40 pointer-events-none"
@@ -21,7 +21,7 @@ export function TrackCard({ track, href }: Props) {
       tabIndex={empty ? -1 : undefined}
       aria-disabled={empty}
     >
-      <span className="text-sm font-semibold text-gray-100 leading-snug">
+      <span className="text-sm font-semibold text-gray-100 line-clamp-2 leading-tight">
         {track.name}
       </span>
       <span className="text-xs text-gray-400">

@@ -67,16 +67,23 @@ export default async function WeekPage({
       <CompareFilters data={data} action={`/week/${weekNum}`} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {data.tracks.map((track) => {
-          const qs = new URLSearchParams();
-          if (data.selectedSeasonId) qs.set("seasonId", String(data.selectedSeasonId));
-          if (data.selectedCarClass) qs.set("carClass", data.selectedCarClass);
-          const tail = qs.toString();
-          const href = tail
-            ? `/week/${weekNum}/track/${track.id}?${tail}`
-            : `/week/${weekNum}/track/${track.id}`;
-          return <TrackCard key={track.id} track={track} href={href} />;
-        })}
+        {[...data.tracks]
+          .sort((a, b) => {
+            const aHas = a.setupCount > 0 ? 0 : 1;
+            const bHas = b.setupCount > 0 ? 0 : 1;
+            if (aHas !== bHas) return aHas - bHas;
+            return a.name.localeCompare(b.name);
+          })
+          .map((track) => {
+            const qs = new URLSearchParams();
+            if (data.selectedSeasonId) qs.set("seasonId", String(data.selectedSeasonId));
+            if (data.selectedCarClass) qs.set("carClass", data.selectedCarClass);
+            const tail = qs.toString();
+            const href = tail
+              ? `/week/${weekNum}/track/${track.id}?${tail}`
+              : `/week/${weekNum}/track/${track.id}`;
+            return <TrackCard key={track.id} track={track} href={href} />;
+          })}
       </div>
     </div>
   );

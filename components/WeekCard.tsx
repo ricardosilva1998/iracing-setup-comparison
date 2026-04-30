@@ -12,7 +12,7 @@ export function WeekCard({ week, href }: Props) {
     <Link
       href={href}
       className={[
-        "rounded-md border border-gray-800 bg-gray-900/60 p-5 flex flex-col gap-1",
+        "h-24 rounded-md border border-gray-800 bg-gray-900/60 p-5 flex flex-col justify-between",
         "transition-transform transition-shadow duration-150",
         empty
           ? "opacity-40 pointer-events-none"
@@ -21,7 +21,7 @@ export function WeekCard({ week, href }: Props) {
       tabIndex={empty ? -1 : undefined}
       aria-disabled={empty}
     >
-      <span className="text-xl font-bold text-gray-100">{week.label}</span>
+      <span className="text-xl font-bold text-gray-100 line-clamp-2 leading-tight">{week.label}</span>
       <span className="text-sm text-gray-400">
         {week.setupCount.toLocaleString()} setup{week.setupCount !== 1 ? "s" : ""}
       </span>
