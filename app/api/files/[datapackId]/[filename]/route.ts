@@ -32,7 +32,7 @@ function resolveFilesCacheRoot(): string {
 const FILES_CACHE_ROOT = resolveFilesCacheRoot();
 
 function validateDatapackId(id: string): boolean {
-  return /^[a-zA-Z0-9]{4,30}$/.test(id);
+  return /^[a-zA-Z0-9_-]{4,40}$/.test(id);
 }
 
 function sanitiseFilename(raw: string): string | null {
