@@ -818,3 +818,30 @@ Format per entry:
 - VRS round 13 probe (unauthenticated) per the user's direction.
 - All round-11 carry-overs unchanged.
 
+### 2026-04-30 14:25 — team-deployment (round 12)
+**Task:** Commit + push round-12 (track filter, /-as-home, P1Doks price suppression); trigger Railway deploy; healthcheck all 5 production curl assertions; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); 6 code files staged by team-deployment -- CLAUDE.md, app/compare/page.tsx, app/layout.tsx, app/page.tsx, components/CompareFilters.tsx, components/CompareTable.tsx, lib/compare-data.ts}
+**Decisions:**
+- **Pre-flight:** `git status -uno` showed exactly 7 expected files modified. No `.env`, `dev.db`, `node_modules`, `.next`, `tsconfig.tsbuildinfo`, `app/generated/`, or temp logs in the tree. team-qa PASS confirmed at CLAUDE.md line 815. Secrets scan across the staged diff names returned only CLAUDE.md documentation references (rotated/placeholder values, not live secrets). All preconditions met.
+- **Commit `330206d`:** "feat(round 12): track filter + /-as-home + hide P1Doks prices". 7 files changed, 145 insertions, 119 deletions. Pushed `e54ce87..330206d` to origin/main. Push succeeded.
+- **Railway deploy triggered explicitly** via `railway up --detach` (matches r5-r11 pattern -- GitHub auto-deploy is not wired). Deployment id `951e5105-9bb9-44da-ba1c-c9af44ef0c5b`. Polled via `railway status --json` with nested-path extraction. Status reached SUCCESS; build+deploy time within normal bounds.
+- **No secrets set this round.** No schema change, no scraper change, no new env vars needed.
+- **Production healthchecks (all 5 pass):**
+  1. `GET /` -> 200, 3.55 MB body; "Open setup" links present; `href="/compare"` -> 0 occurrences (marketing-page is gone; comparison view is the homepage). PASS.
+  2. `GET /compare` -> 307, `Location: https://iracing-setup-comparison-production.up.railway.app/`. PASS.
+  3. `GET /compare?carClass=GT3&weekNum=3` -> 307, `Location: https://iracing-setup-comparison-production.up.railway.app/?carClass=GT3&weekNum=3` (query string preserved exactly). PASS.
+  4. `GET /?trackId=28&carClass=GT3&weekNum=3` -> 200, 102 KB body; "Hockenheimring" present. Track filter is live in production. PASS.
+  5. `GET /?carClass=GT3&weekNum=3` -> 200, 215 KB body; P1Doks hrefs present (1 occurrence); dollar-price strings in HTML: 0 actual price tags (the 5 `$` matches were React RSC serialisation tokens `$undefined`, `$1`, `$7` -- not price text). HYMO + GnG hrefs also present. PASS.
+- **No `/api/ingest` call this round.** UI-only changes; production volume DB is unchanged from round 11 (all 5 shops, 2187+ SetupListings, 2045+ LapTimes).
+- **Runtime log tail (~30s):** Mounting volume on /var/lib/containers/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Local: http://localhost:8080 -> Network: http://0.0.0.0:8080 -> Ready in 0ms. No error spew, no crashes, no restart cycles.
+- **Round 12: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app now opens directly to the comparison table (no marketing page). Track filter dropdown shows all 128 canonical track names. P1Doks cells show lap times only, no prices. `/compare` + `/compare?...` redirect cleanly to `/` + `/?...`.
+**Open:**
+- **Round 13 backlog (in priority order):**
+  1. VRS unauthenticated probe -- user directed "probe first, then decide". Playwright XHR intercept of the free-tier DataPacks page; free-tier signal only (no account).
+  2. `Oval` carClass dropdown leak -- MG NASCAR/oval cars, cosmetic, round-11 carry-over.
+  3. Mobile UI for the 5-column filter + table layout (round-11 carry-over).
+  4. `INGEST_SECRET` rotation cadence policy (round-8 carry-over).
+  5. Image footprint trimming (round-7 carry-over, low priority).
+  6. gosetups W8+ tabs auto-picked-up by next cron (no action needed).
+  7. P1Doks Cognito fallback path (only if public catalog flips gated).
+
