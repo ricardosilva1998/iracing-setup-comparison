@@ -7,7 +7,7 @@ type Props = {
 
 const STATUS_DOT: Record<ScrapingStatus, string> = {
   SCRAPED: "bg-emerald-500",
-  AUTH_SCRAPED: "bg-emerald-500",
+  AUTH_SCRAPED: "bg-teal-400",
   LOGIN_WALLED: "bg-amber-500",
   CLOUDFLARE_BLOCKED: "bg-rose-500",
   API_LOCKED: "bg-rose-500",

@@ -25,13 +25,29 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-ENV DATABASE_PATH=/app/dev.db
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/dev.db ./dev.db
+# The baked seed DB ships at /app/dev.db.seed. At runtime, if DATABASE_PATH
+# points at a volume location that doesn't yet have a DB, we copy the seed
+# there so the first request finds an initialised schema.
+COPY --from=builder /app/dev.db ./dev.db.seed
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Entrypoint: seed the volume-mounted DB on first boot, then start the server.
+# Honours DATABASE_PATH (set by Railway runtime). Defaults to /app/dev.db when
+# unset (matches the historical layout).
+CMD sh -c '\
+  set -e; \
+  TARGET="${DATABASE_PATH:-/app/dev.db}"; \
+  TARGET_DIR=$(dirname "$TARGET"); \
+  mkdir -p "$TARGET_DIR"; \
+  if [ ! -f "$TARGET" ]; then \
+    echo "[boot] seeding $TARGET from /app/dev.db.seed"; \
+    cp /app/dev.db.seed "$TARGET"; \
+  else \
+    echo "[boot] $TARGET already exists; preserving"; \
+  fi; \
+  exec node server.js'

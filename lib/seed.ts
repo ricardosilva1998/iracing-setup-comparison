@@ -20,8 +20,8 @@ const SHOPS = [
   {
     name: "Grid-and-Go",
     url: "https://app.grid-and-go.com",
-    scrapingStatus: "LOGIN_WALLED",
-    notes: "Single-page app behind login. No public catalog.",
+    scrapingStatus: "AUTH_SCRAPED",
+    notes: "Authenticated scrape via Cognito SSO.",
   },
   {
     name: "Coach Dave Academy",
