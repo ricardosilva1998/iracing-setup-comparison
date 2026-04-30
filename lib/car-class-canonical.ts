@@ -87,6 +87,14 @@ const NAME_RULES: NameRule[] = [
   { match: /\b(F3|F4|FIA F4)\b/i,                       carClass: CANONICAL_CLASSES.FORMULA },
   { match: /\bIL-?15\b/i,                               carClass: CANONICAL_CLASSES.FORMULA },
   { match: /\bFormula\b/i,                              carClass: CANONICAL_CLASSES.FORMULA },
+  // Round 11: P1Doks-shaped names that name-regex didn't catch in round 10.
+  // IR18 IndyCar (P1Doks's open-wheel staple) -> Formula category.
+  { match: /\bIR-?18\b/i,                               carClass: CANONICAL_CLASSES.FORMULA },
+  { match: /\bIndyCar\b/i,                              carClass: CANONICAL_CLASSES.FORMULA },
+  { match: /\bSF-?23\b/i,                               carClass: CANONICAL_CLASSES.FORMULA },
+  // Round 11: BMW M2 CS (no "Racing" suffix) -- P1Doks emits this as a
+  // Production-class car for the Nurburgring Endurance Challenge series.
+  { match: /\bM2 CS\b/i,                                carClass: CANONICAL_CLASSES.PRODUCTION },
 
   // Production (BMW M2 CS Racing, Pontiac Solstice, Kia Optima, Street Stock, Ferrari 296 Challenge).
   { match: /\bM2 CS Racing\b/i,                         carClass: CANONICAL_CLASSES.PRODUCTION },

@@ -32,10 +32,10 @@ export default function Home() {
             subscription, run with the user&apos;s explicit consent.
           </li>
           <li>
-            <span className="font-medium text-gray-100">P1Doks</span> -- listed
-            but not scraped. Catalog sits behind an authenticated API; the
-            column appears as a labelled empty-state until we have a
-            legitimate data path.
+            <span className="font-medium text-gray-100">P1Doks</span> --
+            scraped from the public catalog endpoint that backs the
+            marketplace. No auth header is sent on catalog reads; the
+            comparison reflects setups any visitor can see in the SPA.
           </li>
           <li>
             Lap-time signals are sparse -- none of these shops publish a

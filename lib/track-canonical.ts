@@ -162,6 +162,8 @@ const TRACK_ALIASES: Record<string, string> = {
   "Canadian Tire Motorsports Park": "Canadian Tire Motorsport Park",
   "Circuit Park Zandvoort": "Circuit Zandvoort",
   "Donington Park Racing Circuit": "Donington Park",
+  // Round 11: P1Doks emits "Donington Park Circuit" (Circuit suffix).
+  "Donington Park Circuit": "Donington Park",
   "Hockenheimring Baden-Württemberg": "Hockenheimring",
   "Nürburgring’s GP-Strecke": "Nürburgring Grand-Prix-Strecke",
   // Defensive: the same name with the straight ASCII apostrophe.
@@ -216,10 +218,14 @@ const TRACK_ALIASES: Record<string, string> = {
   // St. Petersburg
   "St. Petersburg": "St. Petersburg Grand Prix",
   "St Petersburg Grand Prix": "St. Petersburg Grand Prix",
+  "St Petersburg": "St. Petersburg Grand Prix",
 
   // Algarve
   "Algarve": "Algarve International Circuit",
   "Algarve GP": "Algarve International Circuit",
+  // Round 11: P1Doks emits Portuguese formal name; map to short canonical.
+  "Autódromo Internacional do Algarve": "Algarve International Circuit",
+  "Autodromo Internacional do Algarve": "Algarve International Circuit",
 
   // Summit Point
   "Summit Point": "Summit Point Motorsports Park",
@@ -261,6 +267,8 @@ const TRACK_ALIASES: Record<string, string> = {
 
   // Bathurst -> Mount Panorama
   "Bathurst": "Mount Panorama Circuit",
+  // Round 11: P1Doks emits the long-form venue name.
+  "Mount Panorama Motor Racing Circuit": "Mount Panorama Circuit",
 
   // Daytona Road Course
   "Daytona Road": "Daytona International Speedway",
@@ -269,6 +277,8 @@ const TRACK_ALIASES: Record<string, string> = {
   // Interlagos
   "Interlagos": "Autódromo José Carlos Pace",
   "Interlagos GP": "Autódromo José Carlos Pace",
+  // Round 11: P1Doks emits ASCII variant (no accents). Map to canonical with accents.
+  "Autodromo Jose Carlos Pace": "Autódromo José Carlos Pace",
 
   // Nürburgring Combined family
   "Nurburgring Combined": "Nürburgring Combined",
@@ -285,6 +295,10 @@ const TRACK_ALIASES: Record<string, string> = {
   "Nurburgring GP": "Nürburgring Grand-Prix-Strecke",
   "Nurburgring Gp": "Nürburgring Grand-Prix-Strecke",
   "Nurburgring GP BES WEC": "Nürburgring Grand-Prix-Strecke",
+  // Round 11: P1Doks emits ASCII forms (no umlaut). Map to canonical with umlaut.
+  // ("Nurburgring Combined" was already aliased in round 10.)
+  "Nurburgring Grand-Prix-Strecke": "Nürburgring Grand-Prix-Strecke",
+  "Nurburgring Nordschleife": "Nürburgring Nordschleife",
 
   // Mexico City
   "Mexico City": "Autódromo Hermanos Rodríguez",

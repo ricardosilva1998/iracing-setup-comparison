@@ -34,18 +34,22 @@ import { runHymoScrape } from "@/lib/scrape/hymo";
 import { runGridAndGoScrape, sanitise } from "@/lib/scrape/grid-and-go";
 import { runGosetupsScrape } from "@/lib/scrape/gosetups";
 import { runMajorsGarageScrape } from "@/lib/scrape/majors-garage";
+import { runP1DoksScrape } from "@/lib/scrape/p1doks";
 import { migrateTracks } from "@/lib/migrate-tracks";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // seconds; covers Cognito auth + scrape
+// Round 11: bumped to 600s. Round 10's `?shop=all` ran 316.7s with 4 shops;
+// adding P1Doks pushes us further. The previous 300s envelope had no headroom.
+export const maxDuration = 600;
 
-type ShopFilter = "hymo" | "grid-and-go" | "gosetups" | "majors-garage" | "all";
+type ShopFilter = "hymo" | "grid-and-go" | "gosetups" | "majors-garage" | "p1doks" | "all";
 
 const VALID_SHOPS: ReadonlyArray<ShopFilter> = [
   "hymo",
   "grid-and-go",
   "gosetups",
   "majors-garage",
+  "p1doks",
   "all",
 ];
 
@@ -140,6 +144,7 @@ export async function POST(request: NextRequest) {
     gridAndGo?: ScrapeOutcome;
     gosetups?: ScrapeOutcome;
     majorsGarage?: ScrapeOutcome;
+    p1doks?: ScrapeOutcome;
   } = {
     ok: true,
     shop,
@@ -234,6 +239,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (shop === "p1doks" || shop === "all") {
+      try {
+        const r = await runP1DoksScrape(prisma);
+        result.p1doks = {
+          fetched: r.fetched,
+          inserted: r.inserted,
+          updated: r.updated,
+          errors: r.errors.length,
+        };
+      } catch (err) {
+        const msg = sanitise(String((err as Error).message || err), secrets);
+        console.error(`[ingest] p1doks failed: ${msg}`);
+        result.p1doks = { skipped: `p1doks failed: ${msg.slice(0, 200)}` };
+        if (shop === "p1doks") result.ok = false;
+      }
+    }
+
     result.durationMs = Date.now() - startedAt;
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
@@ -250,7 +272,7 @@ export async function GET() {
   return NextResponse.json(
     {
       error: "Method Not Allowed",
-      hint: "POST /api/ingest with `Authorization: Bearer <INGEST_SECRET>` and optional ?shop=hymo|grid-and-go|gosetups|majors-garage|all",
+      hint: "POST /api/ingest with `Authorization: Bearer <INGEST_SECRET>` and optional ?shop=hymo|grid-and-go|gosetups|majors-garage|p1doks|all",
     },
     {
       status: 405,

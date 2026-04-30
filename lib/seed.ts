@@ -37,9 +37,9 @@ const SHOPS = [
   },
   {
     name: "P1Doks",
-    url: "https://p1doks.com",
-    scrapingStatus: "API_LOCKED",
-    notes: "All API endpoints require authenticated session.",
+    url: "https://p1doks.com/marketplace",
+    scrapingStatus: "AUTH_SCRAPED",
+    notes: "Public catalog endpoint /ql/data-packs (no auth header required for catalog reads). Scraped weekly.",
   },
 ];
 
