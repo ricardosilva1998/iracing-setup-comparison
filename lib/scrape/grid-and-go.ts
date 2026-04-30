@@ -42,6 +42,7 @@ import type { PrismaClient } from "../../app/generated/prisma/client";
 import { lookupCanonicalClass } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
 import { canonicalizeCarName } from "../car-name-canonical";
+import { getGngTokens } from "./grid-and-go-auth";
 
 const APP_HOST = "https://app.grid-and-go.com";
 const API_HOST = "https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com";
@@ -134,21 +135,8 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
 
   const email = process.env.GRID_AND_GO_EMAIL;
   const password = process.env.GRID_AND_GO_PASSWORD;
-  if (!email || !password) {
-    throw new Error("missing GRID_AND_GO_EMAIL or GRID_AND_GO_PASSWORD in env");
-  }
-  const secrets = [email, password];
-
-  // Lazy-import playwright so the standalone Next.js build trace doesn't
-  // try to bundle the Chromium binary unless this function is invoked.
-  let chromium;
-  try {
-    const playwright = await import("playwright");
-    chromium = playwright.chromium;
-  } catch (err) {
-    const msg = sanitise(String((err as Error).message || err), secrets);
-    throw new Error(`playwright not available: ${msg}`);
-  }
+  // Keep secrets array for sanitise() calls on error messages below.
+  const secrets = [email ?? "", password ?? ""].filter(Boolean);
 
   const shop = await prisma.shop.findUnique({ where: { name: SHOP_NAME } });
   if (!shop) {
@@ -171,25 +159,9 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
   }
   const weekByNum = new Map(season.weeks.map((w) => [w.weekNum, w]));
 
-  // In production (Alpine runner) Chromium is installed via `apk add chromium`
-  // and lives at /usr/bin/chromium-browser; CHROMIUM_PATH points there. Locally
-  // (dev / CI without that env var) we fall through to Playwright's bundled
-  // chrome-headless-shell binary. The args list is required for Chromium to
-  // launch inside an unprivileged container.
-  const chromiumPath = process.env.CHROMIUM_PATH;
-  console.log(
-    `launching headless chromium${chromiumPath ? ` (executablePath=${chromiumPath})` : " (bundled)"}`,
-  );
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: chromiumPath || undefined,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-  });
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
-  });
+  // Obtain tokens via the shared auth helper (handles Playwright login + cache).
+  const { idToken } = await getGngTokens();
+  console.log(`authenticated. id_token length=${idToken.length}`);
 
   let totalFetched = 0;
   let totalInserted = 0;
@@ -197,38 +169,6 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
   const errors: string[] = [];
 
   try {
-    const page = await context.newPage();
-
-    console.log(`navigating ${APP_HOST}/`);
-    await page.goto(`${APP_HOST}/`, { waitUntil: "networkidle", timeout: 30000 });
-    await page.waitForTimeout(6000);
-
-    console.log("triggering sign-in");
-    const signInTrigger = page.locator(":has-text('SIGN IN')").last();
-    await signInTrigger.click();
-    await page.waitForURL(/amazoncognito\.com/, { timeout: 20000 });
-
-    await page.waitForTimeout(3000);
-    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
-
-    const usernameSel = page.locator("input[name='username']:visible").first();
-    const passwordSel = page.locator("input[name='password']:visible").first();
-    const submitSel = page.locator("input[name='signInSubmitButton']:visible").first();
-
-    await usernameSel.waitFor({ state: "visible", timeout: 15000 });
-    await usernameSel.fill(email);
-    await passwordSel.fill(password);
-    await submitSel.click();
-    await page.waitForURL(/app\.grid-and-go\.com/, { timeout: 30000 });
-    console.log("post-login redirect ok");
-
-    await page.waitForTimeout(5000);
-    const idToken = await page.evaluate(() => localStorage.getItem("id_token"));
-    if (!idToken) {
-      throw new Error("login appeared to succeed but no id_token in localStorage");
-    }
-    console.log(`authenticated. id_token length=${idToken.length}`);
-
     const seasonsToFetch: { year: number; season: number }[] = [
       { year: season.year, season: season.quarter },
     ];
@@ -239,13 +179,12 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
       const url = `${API_HOST}/datapacks?year=${target.year}&season=${target.season}`;
       console.log(`-> ${safeUrl(url)}`);
 
-      const resp = await page.request.get(url, {
+      const resp = await fetch(url, {
         headers: { Authorization: `Bearer ${idToken}` },
-        timeout: 30000,
+        signal: AbortSignal.timeout(30000),
       });
 
-      const headers = resp.headers();
-      const retryAfter = headers["retry-after"];
+      const retryAfter = resp.headers.get("retry-after");
       if (retryAfter) {
         const seconds = parseInt(retryAfter, 10);
         if (!Number.isNaN(seconds) && seconds > 0) {
@@ -254,11 +193,11 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
         }
       }
 
-      if (resp.status() === 401) {
+      if (resp.status === 401) {
         throw new Error("API returned 401 -- token rejected. Check creds / subscription.");
       }
-      if (!resp.ok()) {
-        errors.push(`HTTP ${resp.status()} on ${safeUrl(url)}`);
+      if (!resp.ok) {
+        errors.push(`HTTP ${resp.status} on ${safeUrl(url)}`);
         continue;
       }
 
@@ -385,9 +324,6 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
     const msg = sanitise(String((err as Error).message || err), secrets);
     errors.push(msg);
     console.error(`scraper error: ${msg}`);
-  } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
   }
 
   await prisma.scrapeRun.create({

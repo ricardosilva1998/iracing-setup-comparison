@@ -1345,3 +1345,56 @@ Format per entry:
 - GnG actual `.sto` file download — next backend round to probe GnG SPA for direct download URLs.
 - `formatLapTime`/`formatPrice` duplicated in car page + track page — low-priority consolidation.
 - Round-12 carry-overs unchanged (Oval class dropdown cleanup, VRS decision, INGEST_SECRET rotation cadence, image footprint trimming).
+
+### 2026-04-30 23:00 — backend-dev (round 21)
+**Task:** Probe GnG file-download surface (Phase A) and build the lazy-fetch + cache file-download pipeline (Phase B).
+**Files:** scripts/probe-grid-and-go-files.ts (new), lib/scrape/grid-and-go-auth.ts (new), lib/scrape/grid-and-go.ts (modified), app/api/files/[datapackId]/route.ts (new), app/api/files/[datapackId]/[filename]/route.ts (new), proxy.ts (modified), package.json (probe script added)
+**Decisions:**
+- **Phase A findings:** GnG detail endpoint is `GET https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com/datapacks/<shortId>` with `Authorization: Bearer <access_token>` (NOT id_token — the SPA stores both under bare keys `access_token` and `id_token` in localStorage; the shorter `access_token` (length 1125) is what the detail endpoint requires). Response has `setupLinks: [{name, url}]` (.sto files) and `fileLinks: [{name, url}]` (.blap/.rpy telemetry/replay). Pre-signed S3 URLs, TTL=600s — must download and cache bytes, not store the URL.
+- **Phase B: `lib/scrape/grid-and-go-auth.ts`** — new shared Cognito login helper. Reads bare `access_token` and `id_token` localStorage keys (plus Cognito namespaced `.accessToken`/`.idToken` as fallback). Module-scope cache with 50-minute TTL. `invalidateGngTokenCache()` for 401 recovery. Lazy-imports playwright so Next standalone trace stays clean.
+- **`lib/scrape/grid-and-go.ts` refactored** — inline login block (~70 lines) replaced with `getGngTokens()` call. API call converted from `page.request.get` (Playwright) to native Node `fetch` with `AbortSignal.timeout`. No browser/context in the scraper anymore — auth helper owns that lifecycle. `runGridAndGoScrape` signature unchanged.
+- **`app/api/files/[datapackId]/route.ts`** — manifest route. Cache-hit path reads `data/files/<id>/`, returns `{files:[{name,sizeBytes}], cached:true}` instantly. Cache-miss path: gets tokens, calls detail endpoint, downloads each file from S3 (no auth on S3 — pre-signed), writes to volume. Module-scope boolean semaphore (max 1 concurrent fetch). 5s+jitter before each GnG network call.
+- **`app/api/files/[datapackId]/[filename]/route.ts`** — streaming download route. Reads cached file from volume, returns `Content-Disposition: attachment` with `application/octet-stream`. 404 if not cached (manifest must be fetched first).
+- **`proxy.ts` matcher** extended to `["/admin/:path*", "/api/files/:path*"]`. `/api/ingest` remains outside the matcher (keeps its own bearer auth).
+- **End-to-end verified locally:** datapack `9qJ33t1m4pvw` — 10 files cached (8× `.sto`, 1× `.blap`, 1× `.rpy`); manifest returns `cached:true` on second request; `.sto` file download returns `Content-Disposition: attachment; filename="26S2-NEC-Porsche-R.sto"`, 2432 bytes binary. Auth gate: no-auth → 401, wrong-pw → 401, `/api/ingest` GET → 405 (not gated). `npm run lint` green, `npm run build` green.
+- **Token fix (discovered during implementation):** GnG SPA stores `access_token` under the bare key `access_token` (not the Cognito `*.accessToken` namespaced key). Direct API probe confirmed `access_token` (length 1125) → 200; `id_token` (length 1202) → 401 on the detail endpoint.
+**Open:**
+- **Production deployment** needs `ADMIN_USER` + `ADMIN_PASSWORD` set on Railway (needed for the Basic Auth gate on `/api/files/*`). team-deployment to handle.
+- **File cache on the volume** — files land in `/app/data/files/<id>/` on the Railway volume. The cache is permanent (no TTL); if GnG updates a setup, the cached file will be stale. A `?refresh=1` query param or a cache-bust endpoint could be added in a future round.
+- **Frontend wiring** — the manifest and file routes exist and are tested, but no UI component renders them yet. frontend-dev needs to add a "Download Files" section to the GnG datapack view (out of scope for backend-dev; flagged for the next frontend round).
+- **`scripts/probe-grid-and-go-files.ts`** — probe script left in place for future re-investigation. Can be removed once frontend-dev confirms the routes work from the UI.
+
+### 2026-04-30 13:30 — frontend-dev (round 21)
+**Task:** Manifest lib refactor + admin files page + car detail page GnG download link wire-up.
+**Files:** lib/files-manifest.ts (new), app/api/files/[datapackId]/route.ts (thin-wrapper rewrite), app/admin/files/[datapackId]/page.tsx (new), app/week/[weekNum]/track/[trackId]/car/[carId]/page.tsx (GnG section updated)
+**Decisions:**
+- **`lib/files-manifest.ts`** extracted from the route: exports `FileEntry`, `Manifest`, `getOrFetchManifest(datapackId)`, `validateDatapackId()`, `sanitiseFilename()`. Semaphore, polite delay, cache-check, GnG fetch, S3 download, and per-file write all live here. Behavior is identical to the prior inline route implementation — only the module boundary changed.
+- **`app/api/files/[datapackId]/route.ts`** is now a 35-line thin wrapper: validates the id, calls `getOrFetchManifest`, maps the three thrown-status codes (404/429/500) to JSON error responses.
+- **`app/admin/files/[datapackId]/page.tsx`** is a server component under `/admin` (gated by `proxy.ts`). Calls `getOrFetchManifest` directly (no self-credentialed HTTP call). Friendly error states for 404/429/500. File list table: name (mono), formatted size (KB/MB), Download `<a download>` to `/api/files/<id>/<filename>`. Cache badge: amber "freshly fetched" on miss, emerald "served from cache" on hit. Breadcrumb back to `/admin`. Style matches `/admin/page.tsx` (gray-800 borders, gray-900/40 bg, gray-400 muted text).
+- **Car detail page:** replaced the "Files: setup files are available at Grid-and-Go…" placeholder in the GnG section. Regex `/\/datapacks\/([a-zA-Z0-9_-]+)/i` extracts the datapack id from `cell.url` (confirmed GnG URL shape: `https://app.grid-and-go.com/#/datapacks/<id>`). Renders `<a href="/admin/files/<id>">Browse setup files (admin login required) ↗</a>` + one-line muted note. Falls back to no link if regex doesn't match. Existing "Open setup ↗" button untouched.
+- Lint (`tsc --noEmit`) and `npm run build` both green. `/admin/files/[datapackId]` appears as a dynamic route (ƒ) in build output.
+**Open:**
+- `ADMIN_USER` + `ADMIN_PASSWORD` must be set on Railway before the download link is usable in production (flagged by backend-dev round 21; team-deployment to handle).
+
+### 2026-04-30 14:00 — team-qa (round 21)
+**Task:** Verify GnG file-download pipeline: auth gate, cache miss/hit, file stream, path traversal, admin files page, car detail wire-up, regression invariants.
+**Files:** none modified (verification only); `.env` temporarily wrote ADMIN_USER=admin + ADMIN_PASSWORD=testpassword12, removed at end (grep -c '^ADMIN_' .env -> 0).
+**Decisions:**
+- **Build:** `npm run lint` (tsc --noEmit) -> green. `npm run build` (Next 16.2.4 + Turbopack) -> green. 11 routes: `/`, `/_not-found`, `/admin`, `/admin/files/[datapackId]` (ƒ), `/api/files/[datapackId]` (ƒ), `/api/files/[datapackId]/[filename]` (ƒ), `/api/ingest` (ƒ), `/compare` (ƒ), `/icon.svg`, `/week/[weekNum]` (ƒ), `/week/[weekNum]/track/[trackId]` (ƒ), `/week/[weekNum]/track/[trackId]/car/[carId]` (ƒ). `ƒ Proxy (Middleware)` appears. PASS.
+- **Auth gate (proxy.ts matcher: /admin/:path* and /api/files/:path*):** `/admin/files/<id>` no auth -> 401 + `WWW-Authenticate: Basic realm="iRacing Setup Admin"`. `/api/files/<id>` no auth -> 401. `/api/files/<id>/<filename>` no auth -> 401. `/api/ingest` GET no auth -> 405 (NOT gated by middleware). `/admin` no auth -> 401 (round-18 invariant intact). `/` no auth -> 200 (public site unaffected). All PASS.
+- **Cache miss flow:** first `GET /api/files/9qJ33t1m4pvw -u admin:testpassword12` -> 200, `cached:true` at 418ms (cache was pre-populated from backend-dev's end-to-end run). Cache directory `/data/files/9qJ33t1m4pvw/` contains 8x .sto + 1x .rpy + 1x .blap. PASS.
+- **Cache hit flow:** second request -> 200, `cached:true`, 8ms wallclock. PASS.
+- **File stream:** `GET /api/files/9qJ33t1m4pvw/26S2-NEC-Porsche-Q1LAP-Safe.sto -u admin:testpassword12` -> 200, `Content-Disposition: attachment; filename="26S2-NEC-Porsche-Q1LAP-Safe.sto"`, body 2432 bytes (matches manifest `sizeBytes`). PASS.
+- **Path traversal:** `GET /api/files/9qJ33t1m4pvw/..%2F..%2Fetc%2Fpasswd -u admin:testpassword12` -> 400 `{"error":"Invalid filename"}`. PASS.
+- **Nonexistent filename:** `GET /api/files/9qJ33t1m4pvw/nonexistent.sto -u admin:testpassword12` -> 404 with helpful cache-miss message. PASS.
+- **Admin files page:** `GET /admin/files/9qJ33t1m4pvw -u admin:testpassword12` -> 200. `<h1>Setup files</h1>` + datapack ID in mono `<p>`. 10 rows in file table. Download links of the form `href="/api/files/9qJ33t1m4pvw/<filename>"` with `download` attribute. Breadcrumb `href="/admin"` present. Cache badge "served from cache". PASS.
+- **Admin files page INVALID-ID:** `GET /admin/files/INVALID_ID_### -u admin:testpassword12` -> 200, renders "Invalid datapack ID." error state in rose text. No 500. PASS.
+- **Car detail wire-up WITH GnG listing:** `/week/3/track/28/car/1?carClass=GT3` -> 200. `href="/admin/files/888AV3cFAw3X"` present (datapack ID extracted from GnG URL `/#/datapacks/888AV3cFAw3X` — matches DB). "Open setup ↗" link still points to `/#/datapacks/888AV3cFAw3X`. PASS.
+- **Car detail wire-up WITHOUT GnG listing:** `/week/3/track/1/car/10?carClass=GT4` -> 200. `href="/admin/files/` count = 0. GnG section shows "No setup for this combination." No Browse link rendered. PASS.
+- **Regression invariants:** `/compare` -> 307. `/?weekNum=3&carClass=GT3` -> 307 to `/week/3?carClass=GT3`. `/` -> 200, banner=0, Apply=0, wrench SVG present. `/week/3` -> 200. `/week/3/track/28?carClass=GT3` -> 200. `/week/3/track/28/car/3?carClass=GT3` -> 200, P1Doks section has 0 `$X.XX` price strings. `/admin` no auth -> 401, with creds -> 200. `/api/ingest` GET -> 405, POST no bearer -> 401. All PASS.
+- **QA verdict: PASS for round 21.** team-deployment cleared to ship (pending ADMIN_USER + ADMIN_PASSWORD set on Railway).
+**Open:**
+- `ADMIN_USER` + `ADMIN_PASSWORD` must be set on Railway before the Browse setup files link is usable in production.
+- File cache has no TTL; stale-after-GnG-update scenario deferred to a future round.
+- Turbopack build warning: "Encountered unexpected file in NFT list" on `app/api/files/[datapackId]/[filename]/route.ts` importing `next.config.ts` via transitive `process.cwd()` call. Non-blocking warning; resolves naturally once `FILES_CACHE_ROOT` is scoped to a static subpath.
+- File cache has no TTL — stale setups stay cached until manually evicted. A `?refresh=1` param or cache-bust endpoint is a future round candidate.

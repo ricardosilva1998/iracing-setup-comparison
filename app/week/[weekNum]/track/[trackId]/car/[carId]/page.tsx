@@ -174,13 +174,24 @@ export default async function CarPage({
                     </div>
                   )}
 
-                  {isGnG && (
-                    <p className="text-xs text-gray-500 border-t border-gray-800 pt-2">
-                      Files: setup files are available at{" "}
-                      <strong className="text-gray-400">Grid-and-Go</strong> &mdash; download
-                      from the SPA for now. Direct file download will be added in a future update.
-                    </p>
-                  )}
+                  {isGnG && (() => {
+                    const m = cell.url?.match(/\/datapacks\/([a-zA-Z0-9_-]+)/i);
+                    const datapackId = m?.[1] ?? null;
+                    if (!datapackId) return null;
+                    return (
+                      <div className="border-t border-gray-800 pt-2 space-y-1">
+                        <a
+                          href={`/admin/files/${datapackId}`}
+                          className="text-sm text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
+                        >
+                          Browse setup files (admin login required) &#x2197;
+                        </a>
+                        <p className="text-xs text-gray-600">
+                          Downloads cached after first fetch. Login uses your /admin credentials.
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   <a
                     href={cell.url}

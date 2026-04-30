@@ -23,7 +23,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  // /admin/:path*   — admin dashboard (existing)
+  // /api/files/:path* — GnG setup file proxy (round 21)
+  // /api/ingest is intentionally excluded: it has its own bearer-token auth
+  // and is hit by the GitHub Actions cron directly.
+  matcher: ["/admin/:path*", "/api/files/:path*"],
 };
 
 const REALM = "iRacing Setup Admin";
