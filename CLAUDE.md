@@ -1233,4 +1233,32 @@ Format per entry:
 **Open:**
 - ADMIN_PASSWORD is now in local .env (gitignored) and Railway env vars only. No GitHub Actions secret needed (admin is human-only; cron only hits /api/ingest). Rotate via `railway variables --set "ADMIN_PASSWORD=$(openssl rand -base64 16)"` and update local .env simultaneously.
 - Round 12 carry-overs still pending: Oval class dropdown cleanup, VRS decision, INGEST_SECRET rotation cadence, image footprint trimming.
+
+### 2026-04-30 — frontend-dev (round 19)
+**Task:** Remove the Apply button from `CompareFilters`; auto-submit on select change.
+**Files:** components/CompareFilters.tsx
+**Decisions:**
+- Added `"use client"` — first client component in the codebase. Props remain fully serialisable (no functions cross the boundary); conversion is clean.
+- Used `e.currentTarget.form?.requestSubmit()` on the `change` event (not `submit()`) so form-submit events fire correctly for any future handlers.
+- Grid adjusted: without `hideSeason` → `lg:grid-cols-2` (was `lg:grid-cols-3`, third column was the button); with `hideSeason` → `lg:grid-cols-1 max-w-xs` so the lone Class select stays compact on wide viewports.
+- Playwright runtime check confirmed: selecting GT3 on `/` auto-navigates to `/?seasonId=1&carClass=GT3` without any button click.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green.
+**Open:** none.
 - No /api/ingest call needed this round (UI/auth-only; volume DB unchanged).
+
+### 2026-04-30 14:00 — team-qa (round 19)
+**Task:** Verify filter form auto-submit + Apply button removal (round 19 single change).
+**Tests added/changed:** none (curl + Playwright smoke, no test files added).
+**Suite result:** 12/12 Playwright checks PASS; lint green; build green.
+**Manual checks:**
+- `npm run lint` (tsc --noEmit) → green.
+- `npm run build` → green; 4 routes generated; `"use client"` in exactly 1 component file (CompareFilters.tsx).
+- Markup checks (curl): `/` → 200, 0 Apply buttons, form+selects present. `/week/3` → 200, 0 Apply buttons. `/week/3/track/28?carClass=GT3` → 200, 0 Apply, `name="seasonId"` absent (hideSeason works), `name="carClass"` present.
+- Playwright (12 checks, all PASS): (1) `/` carClass change → auto-navigates to `/?seasonId=1&carClass=GT3`. (2) `/week/3` GT3→GT4 → `?seasonId=1&carClass=GT4`. (3) Track detail GT3→GT4 → sort state (sortBy=hymo, sortDir=asc) preserved. (4) Clearing Class to "" → navigates to `?seasonId=1&carClass=` (empty, correct). (5-7) No Apply button on /, /week/3, or track detail.
+- Redirects: `/compare` → 307 `/`; `/?weekNum=3&carClass=GT3` → 307 `/week/3?carClass=GT3`. PASS.
+- API: `/api/ingest` GET → 405; POST without bearer → 401. PASS.
+- Admin: `/admin` no auth → 401; with `admin:testpassword12` → 200. PASS.
+- Regression invariants from r12-r18: 13 WeekCards on `/`, 128 TrackCards on `/week/3`, P1Doks price strings = 0, sort indicators (sortBy=hymo) preserved, Season filter hidden on track detail, banner gone, Compare nav gone.
+- ADMIN_USER/ADMIN_PASSWORD test creds removed from `.env` post-smoke. Remaining keys: DATABASE_URL, GRID_AND_GO_EMAIL, GRID_AND_GO_PASSWORD, INGEST_SECRET, P1DOKS_EMAIL, P1DOKS_PASSWORD.
+**Bugs found:** none. Note: initial "All classes" Playwright test had a false negative (waitForURL condition too strict); secondary debug confirmed navigation does fire and produces correct URL `/week/3?seasonId=1&carClass=`.
+**Open:** none.

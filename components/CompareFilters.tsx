@@ -1,3 +1,7 @@
+"use client";
+
+import type { ChangeEvent } from "react";
+
 type FilterData = {
   seasons: { id: number; year: number; quarter: number; label: string }[];
   carClasses: string[];
@@ -17,16 +21,19 @@ type Props = {
 };
 
 /**
- * Server-rendered GET form — submits with query params.
- * No client JS, no useState. Selecting + Apply navigates.
+ * Client component — auto-submits the GET form when any select changes.
+ * No React state; defaultValue on selects is sufficient.
  * Week and Track come from the URL path on sub-pages, not this form.
  */
 export function CompareFilters({ data, action = "/", sortBy, sortDir, hideSeason = false }: Props) {
+  const onSelectChange = (e: ChangeEvent<HTMLSelectElement>) =>
+    e.currentTarget.form?.requestSubmit();
+
   return (
     <form
       method="get"
       action={action}
-      className={`grid grid-cols-1 sm:grid-cols-2 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4 ${hideSeason ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}
+      className={`grid grid-cols-1 sm:grid-cols-2 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4 ${hideSeason ? "lg:grid-cols-1 max-w-xs" : "lg:grid-cols-2"}`}
     >
       {!hideSeason && (
         <label className="flex flex-col gap-1 text-sm">
@@ -34,6 +41,7 @@ export function CompareFilters({ data, action = "/", sortBy, sortDir, hideSeason
           <select
             name="seasonId"
             defaultValue={data.selectedSeasonId ?? ""}
+            onChange={onSelectChange}
             className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
           >
             {data.seasons.map((s) => (
@@ -50,6 +58,7 @@ export function CompareFilters({ data, action = "/", sortBy, sortDir, hideSeason
         <select
           name="carClass"
           defaultValue={data.selectedCarClass ?? ""}
+          onChange={onSelectChange}
           className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
         >
           <option value="">All classes</option>
@@ -61,12 +70,6 @@ export function CompareFilters({ data, action = "/", sortBy, sortDir, hideSeason
         </select>
       </label>
 
-      <button
-        type="submit"
-        className="rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 transition-colors"
-      >
-        Apply
-      </button>
       {sortBy && <input type="hidden" name="sortBy" value={sortBy} />}
       {sortBy && sortDir && <input type="hidden" name="sortDir" value={sortDir} />}
     </form>
