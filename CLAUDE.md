@@ -920,3 +920,30 @@ Format per entry:
   6. Image footprint trimming (~470 MB of apk transitive deps from r7 chromium install).
 - **No INGEST_SECRET rotation needed this round.**
 
+### 2026-04-30 14:45 — backend-dev (round 14 probe)
+**Task:** Probe VRS (virtualracingschool.appspot.com) free-tier login + data accessibility. Research only — no scraper built.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{scripts/probe-vrs.ts (new), package.json (+probe:vrs script)}
+**Decisions:**
+- **Login flow discovered.** The VRS appspot SPA has no standalone login URL. The login panel is opened by clicking an `<a class="white-text">Login</a>` GWT widget inside the SPA (requires Playwright to click and wait 6s for page navigation to `https://login.virtualracingschool.com/`). The form has `input[name=email]` + `input[type=password]` + a hidden `#recaptchaAction` field. Navigating to `#/Login` directly causes the SPA to redirect to the default guest home page (confirmed by gwt-log `"Failed to load URL /Login (redirecting to default page)"`). `vrs.racing/login` and `/account` 404.
+- **BLOCKING FINDING: reCAPTCHA v3 login wall (outcome d).** The login form at `login.virtualracingschool.com` verifies the reCAPTCHA token via `GET /recaptcha/verify?site_key=6LfY2FUdAAAAAKo7QJZyuVeMaJihdD2zrZo4-NT7` before processing credentials. In headless Playwright the response is `{"verified":false,"error":"low reCAPTCHA score"}`. The form stays on the login page; no redirect. Credentials are correct; the reCAPTCHA v3 score-gating is what blocks the submission. Not bypassable without a reCAPTCHA solving service (ToS violation, ongoing cost, brittle).
+- **GWT strong-names: STABLE across two runs.** `.cache.js` strong-name: both runs = `43FB6BBB6B003CB5AA6F7C4256AC4951`. GWT-RPC `POST /WebApp/account` strong-name: both runs = `5FBBD5387DD03C8F7EF19736EAD49C34`. Stable (baked into compiled JS until next VRS deploy). Resolves round-10 concern about rotating strong-names: they ARE stable, but moot because the reCAPTCHA wall blocks login.
+- **Free-tier setup data reachability: NOT confirmed.** Login could not complete in headless Playwright. No authenticated GWT-RPC DataPacks calls were captured. The guest DOM shows "LOGGED IN AS GUEST" with tier counters but no per-pack detail (car, track, week, lap time).
+- **Unauthenticated GWT-RPC shape confirmed.** `POST /WebApp/account` (`AccountService.getServiceNotices`) fires on every page load and returns `//OK[0,1,["java.util.HashMap/1797211028"],0,7]` — an empty HashMap. `POST /WebApp/gwt-log` is `RemoteLoggerService.log` (error logging only). Both are guest-accessible and contain no setup data.
+- **Verdict: outcome (d) — reCAPTCHA v3 wall hit immediately. RECOMMEND STOP.** Options that would change this verdict: (a) reCAPTCHA solving service — ToS violation, ongoing cost, brittle; (b) cookie injection from a real logged-in browser session — requires user to manually export cookies weekly, then load into `context.addCookies()`. Neither is tractable for a low-maintenance automated scraper. Team-leader should decide whether option (b) is acceptable given the manual overhead.
+**Open:**
+- `scripts/probe-vrs.ts` is kept in the repo as a reference for any future re-probe if VRS changes its login flow or adds a JSON API.
+- VRS_EMAIL/VRS_PASSWORD are in `.env` (gitignored) but NOT on Railway (not needed since no VRS scraper exists). Do not set them on Railway unless a scraper is actually built.
+- If team-leader decides cookie injection (option b) is acceptable, the mechanism: user manually logs in via a real browser, exports cookies as JSON (e.g. via a browser extension), `lib/scrape/vrs.ts` loads them via `context.addCookies()` before navigating to the DataPacks page. Bypasses reCAPTCHA but requires weekly manual refresh of the cookie file.
+
+### 2026-04-30 17:30 — claude (round 14 closure)
+**Task:** Close round 14. User reviewed the probe verdict + cookie-injection trade-off and chose to drop VRS for now.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{scripts/probe-vrs.ts (deleted), package.json (removed `probe:vrs` script), .env (stripped `VRS_EMAIL` + `VRS_PASSWORD`), CLAUDE.md (this entry)}
+**Decisions:**
+- **User decision verbatim:** "ok drop vrs for now". Reasoning the user accepted: free-tier yield is single-digit setups (round-10 counter snapshot: `FREE: SPORTS 1, OVAL 1, ...`) versus 1640+ existing deep links across 5 shops -- sub-1% delta -- vs. monthly cookie-refresh maintenance cost of cookie-injection (option b). The math doesn't pay back at the free tier; revisit if the user ever subscribes to VRS Premium (~75 packs).
+- **Stripped local creds.** `VRS_EMAIL` + `VRS_PASSWORD` removed from `.env` (the password was typed into the chat earlier; user was reminded to rotate it on the VRS side or let the account go inactive). Other `.env` keys (`DATABASE_URL`, `GRID_AND_GO_EMAIL`, `GRID_AND_GO_PASSWORD`, `INGEST_SECRET`) untouched.
+- **Removed the probe script** (`scripts/probe-vrs.ts`, 24 KB) and the matching `probe:vrs` line in `package.json`. The round-14 backend-dev entry above retains the full probe finding (login wall = reCAPTCHA v3, GWT strong-names actually stable, free-tier signal too small) so future-us doesn't re-probe from scratch.
+- **No Railway change** -- VRS_* never made it to Railway (round-14 backend-dev's open item said "do not set them on Railway unless a scraper is actually built"). Honoured.
+- **No deploy** -- pure local cleanup + doc note. No code path on prod is affected. Production still serves round 13.
+**Open:**
+- VRS revisit trigger: only worth revisiting if the user moves to VRS Premium AND accepts a monthly cookie-export chore. The round-14 backend-dev entry is the canonical record for that future round.
+- All round-13 carry-overs unchanged (24 MG single-shop slug-leak rows, `Oval` dropdown leak, 14 round-10 track prefix-match pairs, mobile UI, `INGEST_SECRET` rotation cadence, image footprint trimming).
