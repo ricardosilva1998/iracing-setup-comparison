@@ -1262,3 +1262,23 @@ Format per entry:
 - ADMIN_USER/ADMIN_PASSWORD test creds removed from `.env` post-smoke. Remaining keys: DATABASE_URL, GRID_AND_GO_EMAIL, GRID_AND_GO_PASSWORD, INGEST_SECRET, P1DOKS_EMAIL, P1DOKS_PASSWORD.
 **Bugs found:** none. Note: initial "All classes" Playwright test had a false negative (waitForURL condition too strict); secondary debug confirmed navigation does fire and produces correct URL `/week/3?seasonId=1&carClass=`.
 **Open:** none.
+
+### 2026-04-30 22:05 — team-deployment (round 19)
+**Task:** Commit + push round-19 (auto-submit filters, Apply button removed); trigger Railway deploy; production healthcheck; regression checks.
+**Commits:** f93a3d0 — "feat(round 19): auto-submit filters on change, drop Apply button"
+**Pushed to:** origin/main @ f93a3d0 (3ce576c..f93a3d0)
+**PR:** n/a
+**Deploy:** railway up → bac5e7fb-428a-435a-8d4f-ae48c68febea → success
+**Build time:** ~90s
+**Healthcheck:** pass (200 OK on /, /week/3, /week/3/track/28?carClass=GT3)
+**Logs after deploy (60s window):** clean — "Ready in 0ms", Next.js 16.2.4, no error spew, no crashes, no restart cycles.
+**Pre-flight:** git status -uno showed exactly 2 modified files (components/CompareFilters.tsx + CLAUDE.md). No .env, dev.db, node_modules, or surprise files. Secrets scan clean.
+**Production checks (all PASS):**
+- / → 200; Apply button = 0; seasonId + carClass selects present; Next.js client chunks loaded.
+- /week/3 → 200; Apply button = 0.
+- /week/3/track/28?carClass=GT3 → 200; Apply = 0; Track th count = 0 (r18); name=seasonId = 0 (r18); P1Doks price strings = 0 (r12); sort indicators = 10 x (r17).
+- /?weekNum=3&carClass=GT3 → 307 (r12 legacy redirect).
+- /compare → 307 (r12 redirect).
+- /admin no auth → 401, WWW-Authenticate: Basic realm="iRacing Setup Admin" (r18).
+- /api/ingest GET → 405 (cron path uninterrupted).
+**Open:** Round-12 carry-overs unchanged (Oval class dropdown cleanup, VRS decision, INGEST_SECRET rotation cadence, image footprint trimming).
