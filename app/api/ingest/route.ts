@@ -36,6 +36,7 @@ import { runGosetupsScrape } from "@/lib/scrape/gosetups";
 import { runMajorsGarageScrape } from "@/lib/scrape/majors-garage";
 import { runP1DoksScrape } from "@/lib/scrape/p1doks";
 import { migrateTracks } from "@/lib/migrate-tracks";
+import { migrateCars } from "@/lib/migrate-cars";
 
 export const dynamic = "force-dynamic";
 // Round 11: bumped to 600s. Round 10's `?shop=all` ran 316.7s with 4 shops;
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
   type ScrapeOutcome =
     | { fetched: number; inserted: number; updated: number; errors: number }
     | { skipped: string };
-  type TrackMigrationOutcome =
+  type MigrationOutcome =
     | {
         inspected: number;
         orphansFound: number;
@@ -139,7 +140,8 @@ export async function POST(request: NextRequest) {
     ok: boolean;
     shop: ShopFilter;
     durationMs: number;
-    tracks?: TrackMigrationOutcome;
+    tracks?: MigrationOutcome;
+    cars?: MigrationOutcome;
     hymo?: ScrapeOutcome;
     gridAndGo?: ScrapeOutcome;
     gosetups?: ScrapeOutcome;
@@ -153,11 +155,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Round 9: canonicalise track names BEFORE the scrapers run.
-    // This collapses any non-canonical Track rows from earlier scrapes
-    // into the canonical Track row and repoints SetupListings, so a
-    // re-run of /api/ingest is enough to fix track-name drift on
-    // production without manual SSH. Idempotent: post-first-run it's
-    // a no-op (orphansFound=0).
+    // Idempotent: post-first-run it's a no-op (orphansFound=0).
     try {
       const m = await migrateTracks(prisma);
       result.tracks = m;
@@ -165,8 +163,19 @@ export async function POST(request: NextRequest) {
       const msg = sanitise(String((err as Error).message || err), secrets);
       console.error(`[ingest] track migration failed: ${msg}`);
       result.tracks = { skipped: `track migration failed: ${msg.slice(0, 200)}` };
-      // Track migration failure does not block the scrapers; new scrapes
-      // will still write canonical names directly.
+    }
+
+    // Round 13: canonicalise car names BEFORE the scrapers run.
+    // Collapses orphan Car rows (e.g. "Aston Martin GT3" from GnG sitting
+    // next to "Aston Martin Vantage GT3 EVO" from HYMO) into the canonical
+    // Car row and repoints their SetupListing children. Idempotent.
+    try {
+      const m = await migrateCars(prisma);
+      result.cars = m;
+    } catch (err) {
+      const msg = sanitise(String((err as Error).message || err), secrets);
+      console.error(`[ingest] car migration failed: ${msg}`);
+      result.cars = { skipped: `car migration failed: ${msg.slice(0, 200)}` };
     }
 
     if (shop === "hymo" || shop === "all") {

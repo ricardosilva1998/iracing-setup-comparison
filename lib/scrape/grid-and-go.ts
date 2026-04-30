@@ -41,6 +41,7 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { lookupCanonicalClass } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
+import { canonicalizeCarName } from "../car-name-canonical";
 
 const APP_HOST = "https://app.grid-and-go.com";
 const API_HOST = "https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com";
@@ -278,16 +279,17 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
           const mapping = SERIES_MAP[item.series] ?? { category: "Sports Car" };
           const categoryRow = categoryByName.get(mapping.category) ?? defaultCategory;
 
+          const carName = canonicalizeCarName(item.carName);
           const canonicalClass = await lookupCanonicalClass(
             prisma,
-            item.carName,
+            carName,
             item.series || "UNKNOWN",
           );
 
           const car = await prisma.car.upsert({
-            where: { name: item.carName },
+            where: { name: carName },
             create: {
-              name: item.carName,
+              name: carName,
               carClass: canonicalClass,
               categoryId: categoryRow.id,
             },

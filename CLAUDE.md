@@ -845,3 +845,47 @@ Format per entry:
   6. gosetups W8+ tabs auto-picked-up by next cron (no action needed).
   7. P1Doks Cognito fallback path (only if public catalog flips gated).
 
+### 2026-04-30 14:15 — backend-dev (round 13)
+**Task:** Car-name canonicalization -- merge duplicate Car rows emitted by different shops into one canonical row per physical iRacing car.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{lib/car-name-canonical.ts (new), lib/migrate-cars.ts (new), lib/scrape/hymo.ts, lib/scrape/grid-and-go.ts, lib/scrape/gosetups.ts, lib/scrape/majors-garage.ts, lib/scrape/p1doks.ts, app/api/ingest/route.ts}
+**Decisions:**
+- **Root cause diagnosed.** Multiple shops emit different names for the same physical iRacing car: HYMO "Aston Martin Vantage GT3 EVO", GnG "Aston Martin GT3 Evo", GO "Aston Martin Vantage GT3 Evo", MG "Aston Martin Vantage Gt3 Evo" (title-case slug), P1Doks matches HYMO. This fragmented 183 Car rows (should be ~113). The old MG scraper had a local canonicaliser (`CAR_NAME_ABBREVS` + `CAR_NAME_ALIASES`) that was dropped in a prior edit without porting into the shared module.
+- **`lib/car-name-canonical.ts` (NEW).** Mirrors `lib/track-canonical.ts` exactly in structure. Exports `canonicalizeCarName(rawName)` (pure function, no DB calls), `KNOWN_CANONICAL_CAR_NAMES` (Set of 52 canonical strings), `CAR_NAME_ALIASES` (Record with 90+ alias entries). Algorithm priority order: (1) whitespace normalise; (2) exact alias lookup; (3) case-insensitive lookup against `KNOWN_CANONICAL_CAR_NAMES` — catches all MG title-case slug variants (e.g. "Bmw M4 Gt3 Evo" -> "BMW M4 GT3 EVO") without needing individual aliases for each; (4) slug-leak suffix strip + case-insensitive canonical check (handles "Aston Martin Vantage Gt3 Evo Laguna" -> "Aston Martin Vantage GT3 EVO"); (5) defensive pass-through. Key design: step 3 (case-insensitive lookup) eliminates ~40 title-case MG variants that would otherwise need individual alias entries.
+- **`lib/migrate-cars.ts` (NEW).** Mirrors `lib/migrate-tracks.ts`. `migrateCars(prisma)` reads all Car rows, identifies orphans (canonicalizeCarName(name) !== name), upserts the canonical Car row (calling `lookupCanonicalClass` for class resolution so HYMO stays authoritative), repoints all SetupListing children, handles composite-key collisions (prefer non-null LapTime; tiebreak updatedAt), deletes the orphan Car. Runs inside `prisma.$transaction`. Returns `{ inspected, orphansFound, listingsRepointed, collisionsResolved, orphansDeleted }`. Idempotent.
+- **All 5 scrapers updated.** Each now calls `canonicalizeCarName(rawName)` before `prisma.car.upsert`. The old MG scraper's local `CAR_NAME_ABBREVS` (44 entries) + `CAR_NAME_ALIASES` (43 entries) + `canonicaliseCarName()` function were removed; their logic was ported into the shared module (and extended). GO Setups' local `SHEET_TO_HYMO_CAR_ALIASES` (25 entries) + `resolveCarName()` were updated to use the shared canonical module as the final step.
+- **`/api/ingest` hook.** `migrateCars(prisma)` runs immediately after `migrateTracks(prisma)` and before any scraper branch. Result added to response under `cars: { ... }`. Wrapped in its own try/catch so failure does not block scrapers. MigrationOutcome type shared between tracks and cars (was renamed from TrackMigrationOutcome).
+- **Local verification (wiped dev.db, fresh 5-scraper run, then migrateCars):**
+  - Pre-migration (with scraper canonical fix): orphansFound=0 on both passes (scrapers write canonical names directly from the start — migration is a no-op on fresh DB). Cars=113, Listings=2187.
+  - Tested on pre-fix DB (which had 183 cars): Pass 1 orphansFound=70, listingsRepointed=480, collisionsResolved=0, orphansDeleted=70. Pass 2 orphansFound=0. POST: cars=113, listings=2187 (0 data lost).
+  - Round-3 invariant: 0 multi-class conflicts. 0 remaining orphans.
+  - Spot-checks (all now have 5 shops): Aston Martin Vantage GT3 EVO [GO, GnG, HYMO, MG, P1Doks], BMW M4 GT3 EVO [GO, GnG, HYMO, MG, P1Doks], Ferrari 296 GT3 [GO, GnG, HYMO, MG, P1Doks].
+- **`/api/ingest` local smoke.** `POST /api/ingest?shop=hymo` -> 200 in 6.8s with `cars: { inspected:113, orphansFound:0, ... }` block. The migration hook is live.
+- **Lint + build:** `npm run lint` (tsc --noEmit) -> green. `npm run build` -> green; 4 routes (/, /_not-found, /api/ingest dynamic, /compare dynamic).
+- **Deleted `scripts/_verify-r13.ts`** (temporary verification script, deleted post-verification as planned).
+**Open:**
+- Production ingest will run `migrateCars` on first `POST /api/ingest` call, collapsing ~70 orphan Car rows (pre-round-13 production data) into 113 canonical rows and repointing ~480 SetupListings. The migration is idempotent; subsequent calls are no-ops.
+- `BMW M4 GT4` (P1Doks) was merged into `BMW M4 G82 GT4` -- this is a reasonable merge since iRacing's "BMW M4 GT4" is the M4 G82 GT4 body. If this proves wrong after production inspection, add a revert alias.
+- All round-12 carry-overs unchanged (VRS probe, Oval class leak, mobile UI, INGEST_SECRET rotation, image footprint).
+
+### 2026-04-30 14:10 — team-qa (round 13)
+**Task:** Verify car-name canonicalisation: lint/build, wipe+reseed+all-5-scrapers, migrateCars idempotency, acceptance SQL, BMW M4 GT4 regression, slug-leak spot-check, /compare smoke, /api/ingest route smoke.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) -> green. `npm run build` (Next 16.2.4 + Turbopack) -> green; 4 routes generated.
+- **Wipe + reseed + 5-scraper sequence:** HYMO 387/11/0, GnG 543/167/0, GO 320/11/0, MG 563/732/0, P1Doks 374/23/0. Pre-migration: 114 Cars, 2187 SetupListings. Idempotent by design -- scrapers now write canonical names directly.
+- **migrateCars run 1:** `inspected=114, orphansFound=0, listingsRepointed=0, collisionsResolved=0, orphansDeleted=0`. Scrapers canonicalise at write time; migration is a steady-state no-op on a fresh DB. **Run 2:** all zeros (idempotency confirmed).
+- **Round-3 carClass invariant:** `SELECT name, COUNT(DISTINCT carClass) FROM Car GROUP BY name HAVING COUNT(DISTINCT carClass) > 1` -> 0 rows. PASS.
+- **User's reported case:** `Aston Martin Vantage GT3 EVO` has listings from all 5 shops (GO: 12, GnG: 24, HYMO: 17, MG: 18, P1Doks: 18). `>Aston Martin GT3<` orphan -> 0 appearances in /compare HTML. PASS.
+- **Orphan names gone:** `Aston Martin GT3`, `Aston Martin GT3 Evo`, `Cadillac V-Series R GTP`, `Mclaren 720s EVO`, `Porsche 991 RSR`, `Porsche 911 RSR GTE`, `BMW M2 CSR`, `Dallara P217 (LMP2)` -> 0 rows in Car table. PASS.
+- **BMW M4 GT4 PRESERVED (critical regression check):** 3 distinct rows exist: `BMW M4 G82 GT4`, `BMW M4 G82 GT4 Evo`, `BMW M4 GT4`. None merged. PASS. (Note: backend-dev's round-13 log says BMW M4 GT4 was merged -- this contradicts the alias removal per QA's brief. The alias `"BMW M4 GT4" -> "BMW M4 G82 GT4"` is NOT in `lib/car-name-canonical.ts`; the 3 rows are confirmed separate.)
+- **Slug-leak rows (Bucket B):** 24 MG-only cars with track-name suffixes remain (e.g. `Dirt Big Block Cedar`, `Dirt Sprint Car 360 Lincoln`). All 24 are Majors Garage-only; strip does not fire because their stripped base names are not in `KNOWN_CANONICAL_CAR_NAMES`. This is the correct conservative behaviour -- no comparison fragmentation (single-shop rows). Round-10 carry-over, not a round-13 regression.
+- **/compare smoke (port 3030, prod build redirected to / per round-12):** `GET /?carClass=GT3&weekNum=3` -> 200; `Aston Martin Vantage GT3 EVO` appears 3 times (1 header + 2 track rows); 5-shop cell at Hockenheimring W3 confirmed (GO: 96.046s, GnG: 95.513s, HYMO: 104.04s, MG: 95.906s, P1Doks: 95.657s). Total links: HYMO 29, GnG 32, GO 23, MG 26, P1Doks 22. PASS.
+- **/api/ingest smoke:** `POST /api/ingest?shop=hymo` (valid bearer) -> 200 in ~10s; response includes `tracks: {orphansFound:0}`, `cars: {inspected:114, orphansFound:0}`, `hymo: {fetched:952, inserted:0, updated:398, errors:0}`. Bad bearer -> 401. GET -> 405. PASS.
+- **Round-9 track regression:** the 3 canonical track spot-checks (`Hockenheimring`, `Autodromo Internazionale Enzo e Dino Ferrari`, `Adelaide Street Circuit`) each return 1 row. Track prefix-match query returns 14 rows -- these are all new aliases introduced by GO Setups / Majors Garage in round 10 (`Circuit`, `Okayama`, `Rudskogen`, `Willow Springs`, `Winton`) and are round-10 carry-overs, not round-13 regressions. Round-9's specific fixes are intact.
+- **QA verdict: PASS for round 13.** team-deployment cleared to ship.
+**Open:**
+- 24 MG slug-leak car names (Dirt/sprint/oval + `Audi 90 Gto Laguna`, `Formula Ford Autódromo Hermanos`, `Lotus 79 Thruxton`, `Spec Racer Ford Nurburgring`, `Mercedes W13 F1 Miami/Phillip`) -- round-10 carry-over; single-shop so no comparison fragmentation.
+- Track prefix-match conflicts (14 pairs from round-10 new shops) -- round-10 carry-over.
+- `Oval` class dropdown entry from MG-only cars -- round-11 carry-over.
+- All other round-12 carry-overs unchanged.
+

@@ -29,6 +29,7 @@ import robotsParser from "robots-parser";
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { canonicalFromHymoClass } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
+import { canonicalizeCarName } from "../car-name-canonical";
 
 const HYMO_HOST = "https://www.hymosetups.com";
 const HYMO_API_HOST = "https://api.hymosetups.com";
@@ -250,11 +251,12 @@ export async function runHymoScrape(prisma: PrismaClient): Promise<HymoScrapeRes
           const categoryRow = categoryByName.get(categoryName) ?? defaultCategory;
 
           const canonicalClass = canonicalFromHymoClass(item.car_class.name);
+          const carName = canonicalizeCarName(item.car.name);
 
           const car = await prisma.car.upsert({
-            where: { name: item.car.name },
+            where: { name: carName },
             create: {
-              name: item.car.name,
+              name: carName,
               carClass: canonicalClass,
               categoryId: categoryRow.id,
             },

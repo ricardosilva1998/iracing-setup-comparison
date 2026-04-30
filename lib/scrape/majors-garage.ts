@@ -63,6 +63,7 @@ import robotsParser from "robots-parser";
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { canonicalFromName, lookupCanonicalClass } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
+import { canonicalizeCarName } from "../car-name-canonical";
 
 const SHOP_NAME = "Majors Garage";
 const MAJORS_HOST = "https://majorsgarage.com";
@@ -454,116 +455,10 @@ function unkebab(slug: string): string {
     .join(" ");
 }
 
-/**
- * Normalise common car-name abbreviations after un-kebab-casing. Without
- * this, slug "ferrari-296-gt3" turns into "Ferrari 296 Gt3" while HYMO has
- * "Ferrari 296 GT3" -- two different Car rows.
- */
-const CAR_NAME_ABBREVS: Record<string, string> = {
-  "Gt3": "GT3",
-  "Gte": "GTE",
-  "Gt4": "GT4",
-  "Gt2": "GT2",
-  "Gtp": "GTP",
-  "Lmdh": "LMDh",
-  "Lmp2": "LMP2",
-  "Lmp3": "LMP3",
-  "Tcr": "TCR",
-  "Nsx": "NSX",
-  "Bmw": "BMW",
-  "Amg": "AMG",
-  "Pcc": "PCC",
-  "Pcup": "PCUP",
-  "Ir18": "IR18",
-  "Il-15": "IL-15",
-  "Il15": "IL-15",
-  "Mx-5": "MX-5",
-  "Mx5": "MX-5",
-  "Gr86": "GR86",
-  "M2": "M2",
-  "M4": "M4",
-  "M8": "M8",
-  "F3": "F3",
-  "F4": "F4",
-  "Ff1600": "FF1600",
-  "C8r": "C8.R",
-  "9922": "(992.2)",
-  "992": "(992)",
-  "Rsr": "RSR",
-  "Lms": "LMS",
-  "Rs3": "RS3",
-  "Z06": "Z06",
-  "Zr1": "ZR1",
-  // Round 10 -- additional uppercasings to align with HYMO's authoritative
-  // car names (e.g. "BMW M4 GT3 Evo" -> "BMW M4 GT3 EVO").
-  "Evo": "EVO",
-  "Js": "JS",
-  "Arx": "ARX-06",
-  "Ngt": "NGT",
-};
-
-// Multi-token car-name aliases run after the per-token abbreviation pass.
-// Useful when MG's slug-derived form ("Mazda MX-5") doesn't match HYMO's
-// formal name ("Global Mazda MX-5 Cup"). Right side must be the EXACT
-// canonical name HYMO uses so prisma.car.upsert({ where: { name } })
-// deduplicates against the existing row.
-const CAR_NAME_ALIASES: Record<string, string> = {
-  "Mazda MX-5": "Global Mazda MX-5 Cup",
-  "Acura NSX GT3": "Acura NSX GT3 EVO 22",
-  "Lamborghini GT3": "Lamborghini Huracán GT3 EVO",
-  "Mercedes AMG GT3": "Mercedes-AMG GT3 2020",
-  "Audi R8 LMS GT3": "Audi R8 LMS EVO II GT3",
-  "BMW M4 GT3 Evo": "BMW M4 GT3 EVO",
-  "Mclaren 720s Evo": "McLaren 720S GT3 EVO",
-  "Mclaren 720s": "McLaren 720S GT3 EVO",
-  "Corvette Z06 GT3": "Chevrolet Corvette Z06 GT3.R",
-  "Mclaren 570 GT4": "McLaren 570S GT4",
-  "Porsche 718 GT4": "Porsche 718 Cayman GT4 Clubsport MR",
-  "Mercedes AMG GT4": "Mercedes-AMG GT4",
-  "Aston Martin Vantage GT4": "Aston Martin Vantage GT4",
-  "BMW M4 G82 GT4": "BMW M4 G82 GT4",
-  "Audi RS3 LMS Gen2": "Audi RS 3 LMS TCR gen2",
-  "Honda Civic TCR": "Honda Civic Type R TCR",
-  "Hyundai Elantra": "Hyundai Elantra N TCR",
-  "Skip Barber": "Skip Barber Formula 2000",
-  "Porsche Cup (992.2)": "Porsche 911 Cup (992.2)",
-  "Dallara P217 LMP2": "Dallara P217",
-  "Ligier JS P320": "Ligier JS P320",
-  "Acura ARX-06 GTP": "Acura ARX-06 GTP",
-  "BMW M-Hybrid LMDh": "BMW M Hybrid V8",
-  "BMW M Hybrid": "BMW M Hybrid V8",
-  "Cadillac V-Series.R GTP": "Cadillac V-Series.R GTP",
-  "Ferrari 499P GTP": "Ferrari 499P",
-  "Ferrari 488 GTE": "Ferrari 488 GTE",
-  "Ford Gte": "Ford GT GTE",
-  "Ford GTE": "Ford GT GTE",
-  "Corvette C8.R GTE": "Chevrolet Corvette C8.R",
-  "BMW M8 GTE": "BMW M8 GTE",
-  "Porsche RSR": "Porsche 991 RSR",
-  "Spec Racer Ford": "Spec Racer Ford",
-  "Ferrari 296 GT3": "Ferrari 296 GT3",
-  "Porsche 911 GT3 R 992": "Porsche 911 GT3 R (992)",
-  "Ford Mustang GT3": "Ford Mustang GT3",
-  "Toyota GR86": "Toyota GR86",
-  "Dallara IR18": "Dallara IR18",
-  "Dallara F3": "Dallara F3",
-  "Lotus 79": "Lotus 79",
-  "Super Formula": "Super Formula SF23",
-  "Super Formula Light": "Super Formula Lights",
-};
-
-function canonicaliseCarName(rawName: string): string {
-  // 1. Per-token abbreviation pass.
-  const tokenised = rawName
-    .split(" ")
-    .map((token) => CAR_NAME_ABBREVS[token] ?? token)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  // 2. Multi-token alias lookup.
-  if (tokenised in CAR_NAME_ALIASES) return CAR_NAME_ALIASES[tokenised];
-  return tokenised;
-}
+// canonicaliseCarName was the round-10 local helper. Round 13 replaced it
+// with the shared canonicalizeCarName from lib/car-name-canonical.ts which
+// covers all the same aliases plus the cross-shop spelling diffs surfaced
+// by HYMO/GnG/gosetups/P1Doks. Call sites below use canonicalizeCarName.
 
 function parseSlug(slug: string): { carName: string; trackName: string } | null {
   // 1. Strip optional "-<digit>" trailing index.
@@ -837,7 +732,7 @@ export async function runMajorsGarageScrape(prisma: PrismaClient): Promise<Major
           const parsed = parseSlug(row.Slug);
           if (!parsed) continue;
 
-          const carName = canonicaliseCarName(parsed.carName);
+          const carName = canonicalizeCarName(parsed.carName);
           const trackNameRaw = parsed.trackName;
           const canonicalTrackName = canonicalizeTrackName(trackNameRaw);
 

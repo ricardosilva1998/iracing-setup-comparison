@@ -47,6 +47,7 @@ import robotsParser from "robots-parser";
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { canonicalFromName } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
+import { canonicalizeCarName } from "../car-name-canonical";
 
 const SHOP_NAME = "GO Setups";
 const GOSETUPS_HOST = "https://gosetups.gg";
@@ -490,60 +491,31 @@ function buildVariationIndex(products: WcProduct[]): VariationIndex {
 }
 
 /**
- * Hand-maintained alias map for sheet-side names that don't surface in the
- * WC product list (so Jaccard can't find them) but do match HYMO/GnG canonical
- * Car rows already in the DB. Right side must be the exact HYMO name.
- */
-const SHEET_TO_HYMO_CAR_ALIASES: Record<string, string> = {
-  "Aston Martin V8 GT3": "Aston Martin Vantage GT3 EVO",
-  "Aston Martin GT3": "Aston Martin Vantage GT3 EVO",
-  "Acura ARX-06 GTP": "Acura ARX-06 GTP",
-  "BMW M-Hybrid LMDh": "BMW M Hybrid V8",
-  "BMW M Hybrid LMDh": "BMW M Hybrid V8",
-  "Cadillac V-Series.R GTP": "Cadillac V-Series.R GTP",
-  "Porsche 963 GTP": "Porsche 963",
-  "Ferrari 499P GTP": "Ferrari 499P",
-  "Lamborghini Huracan GT3 EVO": "Lamborghini Huracán GT3 EVO",
-  "McLaren 720S GT3 EVO": "McLaren 720S GT3 EVO",
-  "Mercedes AMG GT3": "Mercedes-AMG GT3 2020",
-  "Mercedes AMG GT4": "Mercedes-AMG GT4",
-  "Porsche 911 GT3 R": "Porsche 911 GT3 R (992)",
-  "Porsche 992 GT3 R": "Porsche 911 GT3 R (992)",
-  "Porsche 992.2 Cup": "Porsche 911 Cup (992.2)",
-  "Cup chassis": "NASCAR Cup Series Next Gen Chevrolet Camaro ZL1",
-  "Truck Chassis": "NASCAR Truck Chevrolet Silverado",
-  "Dallara P217 LMP2": "Dallara P217",
-  "Ligier JS P320": "Ligier JS P320",
-  "Hyundai Elantra N TCR": "Hyundai Elantra N TCR",
-  "Honda Civic Type R TCR": "Honda Civic Type R TCR",
-  "Audi RS3 LMS Gen2 TCR": "Audi RS 3 LMS TCR gen2",
-  "Audi R8 LMS GT3 EVO II": "Audi R8 LMS evo II GT3 ",
-  "Porsche 718 GT4": "Porsche 718 Cayman GT4 Clubsport MR",
-  "Porsche 911 RSR": "Porsche 991 RSR",
-};
-
-/**
- * Map a sheet's car name to a WC product's name.
+ * Map a sheet's car name to the WC product name and then to the canonical
+ * car name.
  *
  * The sheet uses shorter, sometimes ambiguous names ("Aston Martin V8 GT3",
- * "Cup chassis", "Truck Chassis", "BMW M2 CS Racing"); WC uses the formal
- * iRacing names ("Aston Martin Vantage GT3 Evo", "NASCAR Cup Series Next Gen
- * Chevrolet Camaro ZL1", "BMW M2 CS Racing"). The first-cut match is the
- * explicit alias map (round 10); then exact case-insensitive against WC
- * product names; finally a normalised-token Jaccard with threshold 0.5.
+ * "Cup chassis", "BMW M2 CS Racing"); WC uses the formal iRacing names.
+ * Strategy:
+ *   1. canonicalizeCarName() from lib/car-name-canonical covers all the known
+ *      cross-shop aliases (Aston Martin GT3 -> Vantage GT3 EVO, etc.).
+ *   2. Exact case-insensitive match against WC product names.
+ *   3. Normalised-token Jaccard with threshold 0.5 against WC product names.
+ *   4. Defensive: return the canonicalised sheet name unchanged.
  *
- * Returns the matched WC product name or the sheet name unchanged if no
- * confident match is found.
+ * Returns the final canonical name (after all passes).
  */
-function canonicaliseCarName(sheetName: string, productNames: string[]): string {
-  if (sheetName in SHEET_TO_HYMO_CAR_ALIASES) {
-    return SHEET_TO_HYMO_CAR_ALIASES[sheetName];
-  }
-  const lc = sheetName.toLowerCase().trim();
+function resolveCarName(sheetName: string, productNames: string[]): string {
+  // Pass 1: shared canonical alias map (handles the cross-shop spelling diffs).
+  const afterCanonical = canonicalizeCarName(sheetName);
+
+  // Pass 2: exact case-insensitive match against WC product names.
+  const lc = afterCanonical.toLowerCase();
   for (const p of productNames) {
-    if (p.toLowerCase() === lc) return p;
+    if (p.toLowerCase() === lc) return canonicalizeCarName(p);
   }
-  // Token Jaccard. Strip non-letter chars first, then split on whitespace.
+
+  // Pass 3: token Jaccard against WC product names.
   const toTokens = (s: string) =>
     new Set(
       s
@@ -552,7 +524,7 @@ function canonicaliseCarName(sheetName: string, productNames: string[]): string 
         .split(/\s+/)
         .filter((t) => t.length >= 2),
     );
-  const sheetTokens = toTokens(sheetName);
+  const sheetTokens = toTokens(afterCanonical);
   let bestScore = 0;
   let best = "";
   for (const p of productNames) {
@@ -565,8 +537,9 @@ function canonicaliseCarName(sheetName: string, productNames: string[]): string 
       best = p;
     }
   }
-  if (bestScore >= 0.5) return best;
-  return sheetName;
+  if (bestScore >= 0.5) return canonicalizeCarName(best);
+
+  return afterCanonical;
 }
 
 /**
@@ -732,7 +705,7 @@ export async function runGosetupsScrape(prisma: PrismaClient): Promise<GosetupsS
       for (const sr of sheetRows) {
         try {
           totalFetched++;
-          const carName = canonicaliseCarName(sr.carName, productNames);
+          const carName = resolveCarName(sr.carName, productNames);
           const canonicalClass =
             canonicalFromName(carName) ??
             canonicalFromName(sr.carName) ??

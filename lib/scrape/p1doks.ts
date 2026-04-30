@@ -67,6 +67,7 @@ import { fetch } from "undici";
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { lookupCanonicalClass } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
+import { canonicalizeCarName } from "../car-name-canonical";
 
 const API_HOST = "https://api.p1doks.com";
 const SITE_HOST = "https://p1doks.com";
@@ -284,7 +285,7 @@ export async function runP1DoksScrape(prisma: PrismaClient): Promise<P1DoksScrap
           const weekRow = weekByNum.get(item.Week);
           if (!weekRow) continue;
 
-          const carName = (item.Car || "").trim();
+          const carName = canonicalizeCarName((item.Car || "").trim());
           const trackNameRaw = (item.Track || "").trim();
           if (!carName || !trackNameRaw) continue;
 
