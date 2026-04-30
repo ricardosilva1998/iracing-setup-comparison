@@ -12,6 +12,8 @@ type Props = {
   /** Preserved across filter submissions so sort survives a class change. */
   sortBy?: string | null;
   sortDir?: "asc" | "desc" | null;
+  /** When true, hides the Season select (e.g. on the track detail page). */
+  hideSeason?: boolean;
 };
 
 /**
@@ -19,27 +21,29 @@ type Props = {
  * No client JS, no useState. Selecting + Apply navigates.
  * Week and Track come from the URL path on sub-pages, not this form.
  */
-export function CompareFilters({ data, action = "/", sortBy, sortDir }: Props) {
+export function CompareFilters({ data, action = "/", sortBy, sortDir, hideSeason = false }: Props) {
   return (
     <form
       method="get"
       action={action}
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4"
+      className={`grid grid-cols-1 sm:grid-cols-2 gap-3 items-end rounded-md border border-gray-800 bg-gray-900/40 p-4 ${hideSeason ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}
     >
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-gray-400">Season</span>
-        <select
-          name="seasonId"
-          defaultValue={data.selectedSeasonId ?? ""}
-          className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
-        >
-          {data.seasons.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!hideSeason && (
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-gray-400">Season</span>
+          <select
+            name="seasonId"
+            defaultValue={data.selectedSeasonId ?? ""}
+            className="bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-gray-100"
+          >
+            {data.seasons.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-gray-400">Class</span>

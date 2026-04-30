@@ -1144,4 +1144,63 @@ Format per entry:
 - **Round 17: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app/week/7/track/57?seasonId=1 -- clicking any shop column header cycles ↕ -> ↑ -> ↓ -> ↕, server-side, no client JS. Filter submits preserve sort state via hidden inputs.
 **Open:**
 - All round-16 carry-overs unchanged: `getCompareData` dead export, `Oval` class dropdown entry, mobile 5-column table UI, 14 prefix-match false-positive track rows.
+
+### 2026-04-30 15:00 — backend-dev (round 18)
+**Task:** Auth foundation for admin dashboard: Next 16 proxy (Basic Auth middleware), `.env.example` placeholders, and server-side data getter for the admin page.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{proxy.ts (new), lib/admin-data.ts (new), .env.example (appended ADMIN_USER + ADMIN_PASSWORD)}
+**Decisions:**
+- **`proxy.ts` (project root):** Next 16 renamed `middleware.ts` → `proxy.ts` with export name `proxy` (build failed with `middleware` export; corrected). Matcher `["/admin/:path*"]` — gates only the admin tree. `/api/ingest`, `/`, `/compare`, `/week/*` are all untouched (confirmed via smoke). Constant-time compare uses a TextEncoder → Uint8Array XOR accumulator (always iterates `expected.length` times; length mismatch encoded in `diff` initialiser so no branch on length). `globalThis.atob` for base64 decode (Edge-runtime safe; no Node Buffer). Password minimum length 12 chars enforced before touching the auth header — short/missing → 503 + `Retry-After: 60` (not 401, which would prompt browser for nonexistent creds). Both username and password comparisons run unconditionally to prevent timing discrimination of which field failed.
+- **`lib/admin-data.ts`:** Two exports — `getScrapingStatusList()` (one row per shop: id, name, scrapingStatus, notes, listingCount, lapTimeCount — three parallel Prisma queries then in-memory join for lap counts) and `getRecentScrapeRuns(limit=20)` (last N ScrapeRun rows ordered by startedAt DESC; field names match schema.prisma exactly). Both are pure async server-only functions with no side effects; called by `app/admin/page.tsx` (frontend-dev's lane).
+- **`.env.example`:** appended `ADMIN_USER=admin` + `ADMIN_PASSWORD=` (empty placeholder) with generation hint (`openssl rand -base64 16`). No change to any existing key.
+- **Smoke results (all pass):**
+  1. `curl /admin` (no auth) → **401** + `WWW-Authenticate: Basic realm="iRacing Setup Admin"`.
+  2. `curl -u admin:wrongpass /admin` → **401**.
+  3. `curl -u admin:testpassword12 /admin` → **404** (auth passed, page not built yet — frontend-dev's lane).
+  4. ADMIN_USER missing → **503**.
+  5. `curl /api/ingest` → **405** (proxy matcher did not catch it).
+  6. `curl /` → **200** (home unaffected).
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; `ƒ Proxy (Middleware)` appears in build output with no deprecation warning.
+- Test creds removed from `.env` after smoke; ADMIN_USER/ADMIN_PASSWORD not yet set on Railway (team-deployment's job).
+**Open:**
+- `app/admin/page.tsx` + admin UI (frontend-dev's lane). Imports `getScrapingStatusList` and `getRecentScrapeRuns` from `@/lib/admin-data`. The 503/401 responses are handled by the browser's native Basic Auth prompt — no custom error page needed.
+- team-deployment must set `ADMIN_USER` + `ADMIN_PASSWORD` (≥12 chars) as Railway environment variables before deploying. Use `railway variables --set "ADMIN_PASSWORD=$(openssl rand -base64 16)"`.
+- ScrapingLegend component removal from public pages is frontend-dev's work in this same round.
+
+### 2026-04-30 — frontend-dev (round 18)
+**Task:** Remove amber warning banner; remove Compare nav link; add wrench mechanic icon (header + favicon); remove Season filter on track page; remove ScrapingLegend from public site; build /admin dashboard page.
+**Files:** app/layout.tsx, components/CompareFilters.tsx, app/week/[weekNum]/track/[trackId]/page.tsx (modified); app/icon.svg, app/admin/page.tsx (new)
+**Decisions:**
+- Amber banner `<div>` and `<nav>` Compare link deleted from `app/layout.tsx`. Header now only has the logo link with the inline wrench SVG prepended.
+- `app/icon.svg` created — Next.js App Router auto-serves it as the favicon at `/icon.svg` (confirmed `Content-Type: image/svg+xml`, HTTP 200).
+- `CompareFilters` received optional `hideSeason?: boolean` prop (default `false`). When true: Season `<select>` block removed, grid collapses from `lg:grid-cols-3` to `lg:grid-cols-2`. Track page passes `hideSeason`; home + week pages unchanged.
+- Track page (`app/week/[weekNum]/track/[trackId]/page.tsx`): removed `ScrapingLegend` import + render, removed the `prisma.shop.findMany` call + `shopsWithNotes` mapping that fed it, removed the `ScrapingStatus` type import (no longer used in this file).
+- `app/admin/page.tsx` (new server component): calls `getScrapingStatusList()` + `getRecentScrapeRuns(20)` from `lib/admin-data.ts` (backend-dev's file, untouched). Renders 4-stat totals grid (listings, lap times, cars, tracks), `<ScrapingLegend>` for shop status, per-shop listing-count table, and recent-runs table (When / Shop / Status color-coded / Duration / Fetched / Inserted / Updated / Errors). Auth is enforced upstream by `proxy.ts` — page itself has no auth logic.
+- `ShopStatusRow.notes` is `string | null` matching exactly what `ScrapingLegend` expects (`notes?: string | null`) — no adapter needed.
+**Open:**
+- team-deployment must set `ADMIN_USER` + `ADMIN_PASSWORD` on Railway before deploying.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; `/admin` appears as `○ (Static)` and `/icon.svg` as `○ /icon.svg` in the route table.
 - No INGEST_SECRET rotation needed this round.
+
+### 2026-04-30 22:30 — team-qa (round 18)
+**Task:** Verify all five round-18 changes: banner removed, Compare nav removed, wrench icon added, Season hidden on track page, ScrapingLegend moved to gated /admin.
+**Tests added/changed:** none (curl smoke only; no E2E infra)
+**Suite result:** npm run lint → green; npm run build → green (7 routes, Proxy Middleware line present)
+**Manual checks:**
+- `GET /` → 200. Private MVP banner: 0 occurrences. Compare nav link: 0. SVG (wrench): 1. Logo text: 1. seasonId select: 1 (Season preserved on home). Scraping status: 0.
+- `GET /icon.svg` → 200, Content-Type image/svg+xml, body starts with `<svg`. Wrench path matches header SVG.
+- `GET /week/3` → 200. Private MVP banner: 0. Compare nav: 0. seasonId: 1 (Season preserved on week page). Scraping status: 0.
+- `GET /week/3/track/28?carClass=GT3` → 200. seasonId: 0 (Season hidden). Scraping status: 0. All 5 shops present (HYMO/GnG/GO/MG/P1Doks). Sort indicators: 10 × ↕ (5 shops, neutral state). No price strings. Track column hidden.
+- `GET /week/3/track/28?carClass=GT3&sortBy=hymo&sortDir=asc` → 200. ↑ count: 2 (HYMO header + sort indicator).
+- `/compare` → 307 to /. `/?weekNum=3&carClass=GT3` → 307 to /week/3?carClass=GT3. /api/ingest GET → 405. /api/ingest POST no auth → 401.
+- **Admin auth gate (all from dev server on port 3030 with ADMIN_USER=admin / ADMIN_PASSWORD=testpassword12):**
+  - No auth → 401 + `WWW-Authenticate: Basic realm="iRacing Setup Admin"`.
+  - Wrong password → 401.
+  - Correct creds → 200. Admin dashboard header: 1. All 5 shop names present. Recent scrape runs section: 1. Listing count table: 31 numeric cells.
+  - /admin/foo no auth → 401 (matcher catches sub-paths).
+  - /api/ingest GET (no auth) → 405 (not gated by middleware).
+  - / (no auth) → 200 (not gated).
+  - ADMIN_PASSWORD=short (5 chars) → 503 + Retry-After: 60.
+  - ADMIN_USER missing (blank .env entry) → 503.
+- **Cleanup:** ADMIN_USER + ADMIN_PASSWORD removed from .env after smoke. `grep -c '^ADMIN_' .env` → 0.
+**Bugs found:** none.
+**Open:** team-deployment must set ADMIN_USER + ADMIN_PASSWORD on Railway before deploying (not yet set per backend-dev's open item).

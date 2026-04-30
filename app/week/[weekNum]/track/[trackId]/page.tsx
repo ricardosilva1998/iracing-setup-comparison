@@ -1,10 +1,8 @@
 import { CompareFilters } from "@/components/CompareFilters";
 import { CompareTable } from "@/components/CompareTable";
-import { ScrapingLegend } from "@/components/ScrapingLegend";
 import { getTrackCompareData } from "@/lib/compare-data";
 import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
-import type { ScrapingStatus } from "@/lib/types";
 import { slugToShopName } from "@/lib/shop-slug";
 import Link from "next/link";
 
@@ -115,14 +113,6 @@ export default async function TrackPage({
       .findUnique({ where: { id: trackId }, select: { name: true } })
       .then((t) => t?.name ?? `Track ${trackId}`));
 
-  const shopRows = await prisma.shop.findMany({ orderBy: { id: "asc" } });
-  const shopsWithNotes = shopRows.map((s) => ({
-    id: s.id,
-    name: s.name,
-    scrapingStatus: s.scrapingStatus as ScrapingStatus,
-    notes: s.notes,
-  }));
-
   const backQs = new URLSearchParams();
   if (data.selectedSeasonId) backQs.set("seasonId", String(data.selectedSeasonId));
   if (data.selectedCarClass) backQs.set("carClass", data.selectedCarClass);
@@ -148,6 +138,7 @@ export default async function TrackPage({
         action={`/week/${weekNum}/track/${trackId}`}
         sortBy={sortBy}
         sortDir={sortBy ? sortDir : null}
+        hideSeason
       />
 
       <CompareTable
@@ -159,7 +150,6 @@ export default async function TrackPage({
         buildSortHref={buildSortHref}
       />
 
-      <ScrapingLegend shops={shopsWithNotes} />
     </div>
   );
 }
