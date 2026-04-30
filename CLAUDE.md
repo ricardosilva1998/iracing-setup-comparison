@@ -1315,3 +1315,33 @@ Format per entry:
 - **Regression:** `/` → 200; banner=0; Compare nav=0; SVG=1; Apply button=0. `/week/3` → 200. Track page: Track col hidden, sort indicators (`↕`) = 2. `/compare` → 307. `/?weekNum=3&carClass=GT3` → 307. `/api/ingest` GET → 405; POST no bearer → 401. `/admin` no auth → 503 (expected — ADMIN_USER/PASSWORD were removed from .env after r19 cleanup; 503 = misconfigured is the designed behaviour per r18). PASS.
 **Bugs found:** none.
 **Open:** GnG actual `.sto` file download (backend round). `formatLapTime`/`formatPrice` duplication across track page + car page — low priority consolidation. Round-12 carry-overs unchanged.
+
+### 2026-04-30 23:15 — team-deployment (round 20)
+**Task:** Commit + push round-20 (4th-level car detail page + clickable car cells); trigger Railway deploy; production healthcheck all 11 checks; tail logs.
+**Commits:** dec6662 — "feat(round 20): car detail page (4th nav level) + clickable car cells"
+**Pushed to:** origin/main @ dec6662 (1c974e9..dec6662)
+**PR:** n/a
+**Deploy:** railway up → 22157ae8-0cac-4a39-af7d-a7e98c3ecd9e → success
+**Build time:** ~60s (200 OK confirmed on first poll)
+**Healthcheck:** pass
+**Logs after deploy (60s window):** clean — "Ready in 0ms", Next.js 16.2.4, volume mounted, no errors, no crashes, no restart cycles.
+**Pre-flight:**
+- team-qa PASS confirmed (round 20, 18/18 checks, log entry present).
+- `git status -sb` showed exactly 4 expected changes: CLAUDE.md (M), components/CompareTable.tsx (M), app/week/[weekNum]/track/[trackId]/page.tsx (M), app/week/[weekNum]/track/[trackId]/car/ (??). No .env, dev.db, node_modules, .next, tsconfig.tsbuildinfo, or app/generated/.
+- Secrets scan (grep staged diff for API_KEY/SECRET/TOKEN/PASSWORD): clean.
+- Explicit `git add` for 4 paths only (no -A, no .). Staged stat: 4 files, 264 insertions, 1 deletion.
+**Production curl results (all PASS):**
+- `GET /week/3/track/28?carClass=GT3` → 200, 98 KB. Car hrefs `/week/3/track/28/car/<id>?carClass=GT3`: 10 present (grep on `/car/` pattern, confirmed 10 distinct GT3 cars). PASS.
+- `GET /week/3/track/28/car/3?carClass=GT3` → 200. h1 count=1. "BMW M4 GT3 EVO" present. Back-link `href="/week/3/track/28?carClass=GT3"` present. Open setup links=4. GnG placeholder (Files) count=2 (RSC stream doubling). name=seasonId=0. name=carClass=0. 5 shops rendered. PASS.
+- P1Doks price suppression: `GET /week/7/track/1/car/1` → 200. Dollar signs = 0. P1Doks section = 2. PASS.
+- Sort-state preserved: `GET /week/3/track/28?carClass=GT3&sortBy=hymo&sortDir=asc` → hrefs with sortBy=hymo: 12. ↑ indicator = 2. PASS.
+- Back-link preserves sort: `GET /week/3/track/28/car/3?carClass=GT3&sortBy=hymo&sortDir=asc` → back-link `href="/week/3/track/28?carClass=GT3&amp;sortBy=hymo&amp;sortDir=asc"`. PASS.
+- Invalid carId: `GET /week/3/track/28/car/99999` → 200. "No setups found" present. PASS.
+- `/compare` → 307. `/?weekNum=3&carClass=GT3` → 307. PASS.
+- `/` → 200. banner=0. Compare nav=0. SVG=1. Apply=0. PASS.
+- `/admin` no auth → 401. PASS.
+- `/api/ingest` GET → 405. PASS.
+**Open:**
+- GnG actual `.sto` file download — next backend round to probe GnG SPA for direct download URLs.
+- `formatLapTime`/`formatPrice` duplicated in car page + track page — low-priority consolidation.
+- Round-12 carry-overs unchanged (Oval class dropdown cleanup, VRS decision, INGEST_SECRET rotation cadence, image footprint trimming).
