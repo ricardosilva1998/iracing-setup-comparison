@@ -20,17 +20,22 @@ export default function Home() {
         </h2>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <span className="font-medium text-gray-100">HYMO Setups</span> --
-            scraped from the public catalog (rate-limited, robots.txt
+            <span className="font-medium text-gray-100">HYMO Setups</span>,{" "}
+            <span className="font-medium text-gray-100">GO Setups</span>, and{" "}
+            <span className="font-medium text-gray-100">Majors Garage</span> --
+            scraped from public catalogs / APIs (rate-limited, robots.txt
             respected).
           </li>
           <li>
-            <span className="font-medium text-gray-100">Grid-and-Go</span>,{" "}
-            <span className="font-medium text-gray-100">Coach Dave Academy</span>,{" "}
+            <span className="font-medium text-gray-100">Grid-and-Go</span> --
+            authenticated scrape via the user&apos;s own paid Plus
+            subscription, run with the user&apos;s explicit consent.
+          </li>
+          <li>
             <span className="font-medium text-gray-100">P1Doks</span> -- listed
-            but not scraped. Their catalogs sit behind login, Cloudflare, or
-            an authenticated API. They appear in the comparison as labelled
-            empty-state columns until we have a legitimate data path.
+            but not scraped. Catalog sits behind an authenticated API; the
+            column appears as a labelled empty-state until we have a
+            legitimate data path.
           </li>
           <li>
             Lap-time signals are sparse -- none of these shops publish a

@@ -23,7 +23,7 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-gray-950 text-gray-100 font-[family-name:var(--font-inter)]">
         <div className="bg-amber-600/90 text-amber-50 text-center text-sm py-1.5 px-4 font-medium">
-          Private MVP -- HYMO and Grid-and-Go scraped; Coach Dave + P1Doks gated
+          Private MVP -- HYMO, Grid-and-Go, GO Setups, and Majors Garage scraped; P1Doks gated
         </div>
         <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-6">

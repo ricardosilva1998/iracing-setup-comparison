@@ -24,10 +24,16 @@ const SHOPS = [
     notes: "Authenticated scrape via Cognito SSO.",
   },
   {
-    name: "Coach Dave Academy",
-    url: "https://coachdaveacademy.com/product-category/iracing-setups/",
-    scrapingStatus: "CLOUDFLARE_BLOCKED",
-    notes: "Cloudflare protection blocks plain HTTP clients.",
+    name: "GO Setups",
+    url: "https://gosetups.gg/product-category/iracing-setups/",
+    scrapingStatus: "SCRAPED",
+    notes: "WC Store API + public Google Sheet for lap times. Scraped weekly.",
+  },
+  {
+    name: "Majors Garage",
+    url: "https://majorsgarage.com/search/1777543970215x386287372218609340",
+    scrapingStatus: "SCRAPED",
+    notes: "Bubble.io public Data API. Free iRacing setups. Scraped weekly.",
   },
   {
     name: "P1Doks",
@@ -36,6 +42,13 @@ const SHOPS = [
     notes: "All API endpoints require authenticated session.",
   },
 ];
+
+// Round 10: Coach Dave Academy was Cloudflare-blocked from round 1; user
+// chose to drop it from the comparison set. The seeder runs deleteMany on
+// any pre-existing Shop row with this name so production state converges
+// without manual SSH. Idempotent: deleteMany returns 0 when the row is
+// already gone.
+const SHOPS_TO_REMOVE = ["Coach Dave Academy"];
 
 const CATEGORIES = [
   "Road",
@@ -60,6 +73,19 @@ async function main() {
     });
   }
   console.log(`Seeded ${SHOPS.length} shops.`);
+
+  // Round 10: drop deprecated shops (idempotent). Cascade removes any
+  // SetupListing + LapTime rows that pointed at the deprecated shop, per
+  // the onDelete: Cascade relation in prisma/schema.prisma. We log the
+  // removed count so the deploy log shows whether the row was present.
+  const removed = await prisma.shop.deleteMany({
+    where: { name: { in: SHOPS_TO_REMOVE } },
+  });
+  if (removed.count > 0) {
+    console.log(
+      `Removed ${removed.count} deprecated shop(s): ${SHOPS_TO_REMOVE.join(", ")}`,
+    );
+  }
 
   for (const name of CATEGORIES) {
     await prisma.category.upsert({

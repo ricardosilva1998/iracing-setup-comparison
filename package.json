@@ -10,7 +10,9 @@
     "db:push": "npx prisma db push",
     "db:seed": "npx tsx lib/seed.ts",
     "scrape:hymo": "npx tsx scripts/scrape-hymo.ts",
-    "scrape:grid-and-go": "npx tsx scripts/scrape-grid-and-go.ts"
+    "scrape:grid-and-go": "npx tsx scripts/scrape-grid-and-go.ts",
+    "scrape:gosetups": "npx tsx scripts/scrape-gosetups.ts",
+    "scrape:majors-garage": "npx tsx scripts/scrape-majors-garage.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.5.0",

@@ -32,14 +32,22 @@ import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 import { runHymoScrape } from "@/lib/scrape/hymo";
 import { runGridAndGoScrape, sanitise } from "@/lib/scrape/grid-and-go";
+import { runGosetupsScrape } from "@/lib/scrape/gosetups";
+import { runMajorsGarageScrape } from "@/lib/scrape/majors-garage";
 import { migrateTracks } from "@/lib/migrate-tracks";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // seconds; covers Cognito auth + scrape
 
-type ShopFilter = "hymo" | "grid-and-go" | "all";
+type ShopFilter = "hymo" | "grid-and-go" | "gosetups" | "majors-garage" | "all";
 
-const VALID_SHOPS: ReadonlyArray<ShopFilter> = ["hymo", "grid-and-go", "all"];
+const VALID_SHOPS: ReadonlyArray<ShopFilter> = [
+  "hymo",
+  "grid-and-go",
+  "gosetups",
+  "majors-garage",
+  "all",
+];
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -130,6 +138,8 @@ export async function POST(request: NextRequest) {
     tracks?: TrackMigrationOutcome;
     hymo?: ScrapeOutcome;
     gridAndGo?: ScrapeOutcome;
+    gosetups?: ScrapeOutcome;
+    majorsGarage?: ScrapeOutcome;
   } = {
     ok: true,
     shop,
@@ -190,6 +200,40 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (shop === "gosetups" || shop === "all") {
+      try {
+        const r = await runGosetupsScrape(prisma);
+        result.gosetups = {
+          fetched: r.fetched,
+          inserted: r.inserted,
+          updated: r.updated,
+          errors: r.errors.length,
+        };
+      } catch (err) {
+        const msg = sanitise(String((err as Error).message || err), secrets);
+        console.error(`[ingest] gosetups failed: ${msg}`);
+        result.gosetups = { skipped: `gosetups failed: ${msg.slice(0, 200)}` };
+        if (shop === "gosetups") result.ok = false;
+      }
+    }
+
+    if (shop === "majors-garage" || shop === "all") {
+      try {
+        const r = await runMajorsGarageScrape(prisma);
+        result.majorsGarage = {
+          fetched: r.fetched,
+          inserted: r.inserted,
+          updated: r.updated,
+          errors: r.errors.length,
+        };
+      } catch (err) {
+        const msg = sanitise(String((err as Error).message || err), secrets);
+        console.error(`[ingest] majors-garage failed: ${msg}`);
+        result.majorsGarage = { skipped: `majors-garage failed: ${msg.slice(0, 200)}` };
+        if (shop === "majors-garage") result.ok = false;
+      }
+    }
+
     result.durationMs = Date.now() - startedAt;
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
@@ -206,7 +250,7 @@ export async function GET() {
   return NextResponse.json(
     {
       error: "Method Not Allowed",
-      hint: "POST /api/ingest with `Authorization: Bearer <INGEST_SECRET>` and optional ?shop=hymo|grid-and-go|all",
+      hint: "POST /api/ingest with `Authorization: Bearer <INGEST_SECRET>` and optional ?shop=hymo|grid-and-go|gosetups|majors-garage|all",
     },
     {
       status: 405,

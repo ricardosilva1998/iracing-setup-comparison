@@ -59,22 +59,75 @@
  */
 
 // ---- canonical names (single source of truth) -----------------------------
-// The 13 keys below are the canonical names; every alias collapses to one
-// of these. Names not in this set pass through unchanged after whitespace
-// cleanup (so newly added tracks don't break).
+// Every alias collapses to one of these. Names not in this set pass through
+// unchanged after whitespace cleanup (so newly added tracks don't break).
+//
+// Round 10 expanded the set substantially because the new shops (gosetups,
+// Majors Garage) emit bare-name forms ("Sebring", "Imola", "Spa", "Suzuka")
+// where HYMO/GnG use the formal venue names. The canonical of choice is
+// always the formal iRacing venue name when one exists, so HYMO + GnG
+// rows continue to be authoritative.
 export const KNOWN_CANONICAL_TRACK_NAMES = [
   "Adelaide Street Circuit",
+  "Algarve International Circuit",
+  "Atlanta Motor Speedway",
+  "Auto Club Speedway",
   "Autodromo Internazionale Enzo e Dino Ferrari",
+  "Autodromo Internazionale del Mugello",
   "Autódromo Hermanos Rodríguez",
   "Autódromo José Carlos Pace",
+  "Barber Motorsports Park",
   "Brands Hatch Circuit",
+  "Bristol Motor Speedway",
   "Canadian Tire Motorsport Park",
+  "Charlotte Motor Speedway",
   "Circuit Zandvoort",
+  "Circuit de Spa-Francorchamps",
+  "Circuit of the Americas",
   "Circuito de Jerez",
+  "Darlington Raceway",
+  "Daytona International Speedway",
   "Donington Park",
+  "Fuji International Speedway",
   "Hockenheimring",
+  "Homestead-Miami Speedway",
+  "Indianapolis Motor Speedway",
+  "Iowa Speedway",
+  "Kansas Speedway",
+  "Kentucky Speedway",
+  "Las Vegas Motor Speedway",
+  "Lime Rock Park",
+  "Long Beach Street Circuit",
+  "Martinsville Speedway",
+  "Michigan International Speedway",
+  "Mount Panorama Circuit",
+  "Motorsport Arena Oschersleben",
+  "Nürburgring Combined",
   "Nürburgring Grand-Prix-Strecke",
+  "Nürburgring Nordschleife",
+  "Oulton Park Circuit",
+  "Phoenix Raceway",
+  "Pocono Raceway",
+  "Portland International Raceway",
+  "Red Bull Ring",
+  "Richmond Raceway",
+  "Road America",
+  "Road Atlanta",
+  "Rockingham Speedway",
+  "Sachsenring",
+  "Sebring International Raceway",
+  "Silverstone Circuit",
+  "Snetterton Circuit",
+  "Sonoma Raceway",
+  "St. Petersburg Grand Prix",
   "Summit Point Motorsports Park",
+  "Suzuka International Racing Course",
+  "Talladega Superspeedway",
+  "Texas Motor Speedway",
+  "Tsukuba Circuit",
+  "Twin Ring Motegi",
+  "Virginia International Raceway",
+  "Watkins Glen International",
   "WeatherTech Raceway at Laguna Seca",
 ] as const;
 
@@ -115,6 +168,179 @@ const TRACK_ALIASES: Record<string, string> = {
   "Nürburgring's GP-Strecke": "Nürburgring Grand-Prix-Strecke",
   "Summit Point Raceway": "Summit Point Motorsports Park",
   "WeatherTech Raceway Laguna Seca": "WeatherTech Raceway at Laguna Seca",
+
+  // Round 10 -- gosetups + Majors Garage emit bare-name forms (slug-derived
+  // or sheet-header-derived). Each alias canonicalises to the formal
+  // iRacing venue name HYMO + GnG already use, so cells consolidate.
+
+  // Sebring family
+  "Sebring": "Sebring International Raceway",
+  "SEBRING": "Sebring International Raceway",
+  "guess what? SEBRING": "Sebring International Raceway",
+
+  // Imola
+  "Imola": "Autodromo Internazionale Enzo e Dino Ferrari",
+  "Imola GP": "Autodromo Internazionale Enzo e Dino Ferrari",
+
+  // Long Beach
+  "Long Beach": "Long Beach Street Circuit",
+  "Long Beach Grand Prix": "Long Beach Street Circuit",
+
+  // Mugello
+  "Mugello": "Autodromo Internazionale del Mugello",
+  "Mugello GP": "Autodromo Internazionale del Mugello",
+
+  // Fuji
+  "Fuji": "Fuji International Speedway",
+  "Fuji GP": "Fuji International Speedway",
+
+  // Silverstone
+  "Silverstone": "Silverstone Circuit",
+  "Silverstone GP": "Silverstone Circuit",
+  "Silverstone Circuit - Grand Prix": "Silverstone Circuit",
+
+  // Hockenheim
+  "Hockenheim": "Hockenheimring",
+  "Hockenheim GP": "Hockenheimring",
+  "Hockenheimring GP": "Hockenheimring",
+
+  // Spa
+  "Spa": "Circuit de Spa-Francorchamps",
+  "Spa Francorchamps GP": "Circuit de Spa-Francorchamps",
+  "SPA gp pits": "Circuit de Spa-Francorchamps",
+
+  // Laguna Seca
+  "Seca": "WeatherTech Raceway at Laguna Seca",
+  "Laguna Seca": "WeatherTech Raceway at Laguna Seca",
+
+  // St. Petersburg
+  "St. Petersburg": "St. Petersburg Grand Prix",
+  "St Petersburg Grand Prix": "St. Petersburg Grand Prix",
+
+  // Algarve
+  "Algarve": "Algarve International Circuit",
+  "Algarve GP": "Algarve International Circuit",
+
+  // Summit Point
+  "Summit Point": "Summit Point Motorsports Park",
+
+  // Oschersleben
+  "Oschersleben": "Motorsport Arena Oschersleben",
+
+  // Donington
+  "Donington": "Donington Park",
+  "Donington GP": "Donington Park",
+  "Donington National": "Donington Park",
+
+  // Sonoma
+  "Sonoma": "Sonoma Raceway",
+  "Sonoma Sportscar ALT": "Sonoma Raceway",
+
+  // VIR
+  "Vir": "Virginia International Raceway",
+  "VIR": "Virginia International Raceway",
+  "Virginia Full": "Virginia International Raceway",
+  "Virginia International Raceway Full Course": "Virginia International Raceway",
+
+  // Watkins Glen
+  "Watkins Glen": "Watkins Glen International",
+  "Watkins Boot": "Watkins Glen International",
+  "Watkins Glen International Boot": "Watkins Glen International",
+  "Watkins Glen Boot": "Watkins Glen International",
+
+  // Suzuka
+  "Suzuka": "Suzuka International Racing Course",
+  "Suzuka GP": "Suzuka International Racing Course",
+
+  // Tsukuba
+  "Tsukuba": "Tsukuba Circuit",
+  "Tsukuba 2000 Full": "Tsukuba Circuit",
+
+  // Charlotte
+  "Charlotte": "Charlotte Motor Speedway",
+
+  // Bathurst -> Mount Panorama
+  "Bathurst": "Mount Panorama Circuit",
+
+  // Daytona Road Course
+  "Daytona Road": "Daytona International Speedway",
+  "Daytona": "Daytona International Speedway",
+
+  // Interlagos
+  "Interlagos": "Autódromo José Carlos Pace",
+  "Interlagos GP": "Autódromo José Carlos Pace",
+
+  // Nürburgring Combined family
+  "Nurburgring Combined": "Nürburgring Combined",
+  "Nurburgring Combined Gesamtstrecke 24h": "Nürburgring Combined",
+  "Nurburgring Combined Gesamstrecke VLN": "Nürburgring Combined",
+  "Nords 24h strecke": "Nürburgring Combined",
+  "Nurb 24h Strecke": "Nürburgring Combined",
+  "Nurb 24h": "Nürburgring Combined",
+
+  // Nordschleife (separate physical layout from Combined)
+  "Nordschleife": "Nürburgring Nordschleife",
+
+  // Nürburgring GP family
+  "Nurburgring GP": "Nürburgring Grand-Prix-Strecke",
+  "Nurburgring Gp": "Nürburgring Grand-Prix-Strecke",
+  "Nurburgring GP BES WEC": "Nürburgring Grand-Prix-Strecke",
+
+  // Mexico City
+  "Mexico City": "Autódromo Hermanos Rodríguez",
+  "Mexico City GP": "Autódromo Hermanos Rodríguez",
+  "Mexic GP": "Autódromo Hermanos Rodríguez",
+
+  // Mosport
+  "Mosport": "Canadian Tire Motorsport Park",
+
+  // COTA
+  "COTA": "Circuit of the Americas",
+  "COTA Nascar West": "Circuit of the Americas",
+
+  // Misc bare names
+  "Barber": "Barber Motorsports Park",
+  "Barber Full": "Barber Motorsports Park",
+  "Barber Classic": "Barber Motorsports Park",
+  "Lime Rock": "Lime Rock Park",
+  "Lime Rock Park Chicanes": "Lime Rock Park",
+  "Road Atlanta Full": "Road Atlanta",
+  "Road America - Full Course": "Road America",
+  "Jerez": "Circuito de Jerez",
+  "Jerez Moto": "Circuito de Jerez",
+  "Circuito De Navarra": "Circuito de Navarra",
+  "Indianapolis": "Indianapolis Motor Speedway",
+  "Snetterton": "Snetterton Circuit",
+  "Oulton Park": "Oulton Park Circuit",
+  "Oulton Intl.": "Oulton Park Circuit",
+  "Zandvoort": "Circuit Zandvoort",
+  "Zandvoort GP": "Circuit Zandvoort",
+  "Twin Ring Motegi": "Twin Ring Motegi",
+  "Motegi GP": "Twin Ring Motegi",
+  "Mobility Resort Motegi": "Twin Ring Motegi",
+  "Motegi Oval": "Twin Ring Motegi",
+  "Daytona International Speedway": "Daytona International Speedway",
+
+  // NASCAR / short-oval bare names common in Majors Garage's slug catalogue.
+  "Texas": "Texas Motor Speedway",
+  "Bristol": "Bristol Motor Speedway",
+  "Las Vegas": "Las Vegas Motor Speedway",
+  "Auto Club": "Auto Club Speedway",
+  "Homestead": "Homestead-Miami Speedway",
+  "Iowa": "Iowa Speedway",
+  "Michigan": "Michigan International Speedway",
+  "Pocono": "Pocono Raceway",
+  "Talladega": "Talladega Superspeedway",
+  "Darlington": "Darlington Raceway",
+  "Kansas": "Kansas Speedway",
+  "Richmond": "Richmond Raceway",
+  "Atlanta": "Atlanta Motor Speedway",
+  "Phoenix": "Phoenix Raceway",
+  "Kentucky": "Kentucky Speedway",
+  "Martinsville": "Martinsville Speedway",
+  "Rockingham": "Rockingham Speedway",
+  "Charlotte Motor Speedway": "Charlotte Motor Speedway",
+  "Circuit Of The Americas": "Circuit of the Americas",
 };
 
 /**
