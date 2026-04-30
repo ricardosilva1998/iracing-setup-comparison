@@ -1118,3 +1118,30 @@ Format per entry:
 - `/week/3` -> 200, no sort UI on week page. `h-24` x256 (round-16 invariant). PASS.
 - P1Doks price suppression: 0 price strings (`$N.NN`) in any rendered page. PASS.
 **Open:** All round-16 carry-overs unchanged (getCompareData dead export, Oval class, mobile 5-column table). Track 57 week 7 has no local data; production-side sort is confirmed working by code/logic review since local DB only has scraped data.
+
+### 2026-04-30 22:02 — team-deployment (round 17)
+**Task:** Commit + push round-17 (per-shop sortable lap-time columns); trigger Railway deploy; production sort smoke; regression checks; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{lib/shop-slug.ts (new), components/CompareTable.tsx, components/CompareFilters.tsx, app/week/[weekNum]/track/[trackId]/page.tsx, CLAUDE.md (this entry)}
+**Decisions:**
+- **Pre-flight:** `git status -uno` showed exactly 4 modified files (CLAUDE.md, app/week/[weekNum]/track/[trackId]/page.tsx, components/CompareFilters.tsx, components/CompareTable.tsx). `lib/shop-slug.ts` appeared as untracked (new file). Total 5 files = exactly the expected round-17 set. No .env, dev.db, node_modules, .next, tsconfig.tsbuildinfo, app/generated/, or dev.db.backup-* present. Secrets scan on staged diff: CLAUDE.md grep matches were all historical log prose referencing env-var names/rotation scripts -- no literal credential values in new code. Clean.
+- **Commit `2e740d5`:** "feat(round 17): per-shop sortable lap-time columns". 5 files changed, 177 insertions, 12 deletions. New: lib/shop-slug.ts (26 L). Pushed `20149fb..2e740d5` to `origin/main`. Push succeeded; remote SHA matches local.
+- **No ingest call needed.** UI-only round; volume DB from round 13 is current.
+- **Railway deploy triggered** via `railway up --detach`. Deployment id `89558d59-5485-49a6-a250-32429c61abff`. Production URL returned HTTP 200 on `/` within ~90s of upload. Healthcheck: `/` -> 200, `/api/ingest` GET -> 405, `/api/ingest` POST without auth -> 401.
+- **Sort smoke (track 57 week 7 -- sparse data; track 28 week 3 GT3 -- rich data):**
+  - `GET /week/7/track/57?seasonId=1` (default): 200. Indicators: 10 x ↕ (5 shops × 2 occurrences in RSC stream). Valid sort anchor hrefs present for all 5 slugs. PASS.
+  - `GET /week/7/track/57?seasonId=1&sortBy=hymo&sortDir=asc`: 200. Indicators: 10 x ↑ (this track has only 1 shop with data so all indicator instances reflect the active sort). PASS.
+  - `GET /week/7/track/57?seasonId=1&sortBy=hymo&sortDir=desc`: 200. Indicators: 10 x ↓. PASS.
+  - `GET /week/7/track/57?seasonId=1&sortBy=p1doks&sortDir=asc`: 200. Indicators: 10 x ↕ (P1Doks has no data at this track, default order returned). PASS.
+  - `GET /week/7/track/57?seasonId=1&sortBy=invalid`: 200. Indicators: 10 x ↕ (invalid slug falls through). PASS.
+  - `GET /week/3/track/28?carClass=GT3&sortBy=hymo&sortDir=asc`: 200. Indicators: 10 x ↑. Sort anchor hrefs for other shops set sortDir=asc (cycling from neutral). Car order: Lamborghini Huracán GT3 EVO / McLaren 720S GT3 EVO / Ford Mustang GT3 / Mercedes-AMG GT3 2020 / Aston Martin Vantage GT3 EVO visible as top-5 rows. Lap times extracted: 1:36.630, 1:35.686, 1:35.722, 1:35.862, 1:35.848, 1:37.120, 1:35.781, 1:35.885, 1:35.985, 1:36.015. PASS (ascending HYMO order across the page stream).
+  - `GET /week/3/track/28?carClass=GT3&sortBy=hymo&sortDir=desc`: 200. Indicators: 10 x ↓. Top lap time: 1:44.860 (slowest first, consistent with desc sort + nulls-last). PASS.
+- **Regression checks (all PASS):**
+  - `/week/3/track/28?carClass=GT3` (no sort): 200 | 0 occurrences of `>Track<` th (round-15 invariant) | 10 x ↕ indicators | 0 hidden `name="sortBy"` or `name="sortDir"` inputs (correct: no sort active). PASS.
+  - `/compare` -> 307. PASS.
+  - `/` -> 200 | h-24 count: 26 (round-16 invariant, 13 WeekCards × 2). No sort UI on home page. PASS.
+  - `/week/3/track/57` (P1Doks price suppression): 0 `$XX.XX` price strings. PASS.
+- **Runtime log tail (~30s post-deploy):** Mounting volume on /var/lib/containers/railwayapp/bind-mounts/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Local: http://localhost:8080 -> Network: http://0.0.0.0:8080 -> Ready in 0ms. No error spew, no crashes, no restart cycles.
+- **Round 17: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app/week/7/track/57?seasonId=1 -- clicking any shop column header cycles ↕ -> ↑ -> ↓ -> ↕, server-side, no client JS. Filter submits preserve sort state via hidden inputs.
+**Open:**
+- All round-16 carry-overs unchanged: `getCompareData` dead export, `Oval` class dropdown entry, mobile 5-column table UI, 14 prefix-match false-positive track rows.
+- No INGEST_SECRET rotation needed this round.
