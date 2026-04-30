@@ -5,6 +5,7 @@ import { getTrackCompareData } from "@/lib/compare-data";
 import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import type { ScrapingStatus } from "@/lib/types";
+import { slugToShopName } from "@/lib/shop-slug";
 import Link from "next/link";
 
 type Params = Promise<{ weekNum: string; trackId: string }>;
@@ -52,11 +53,59 @@ export default async function TrackPage({
   const seasonId = pickInt(sp.seasonId);
   const carClass = pickString(sp.carClass);
 
+  // Sort state — server-side only, no client JS.
+  const rawSortBy = pickString(sp.sortBy);
+  const sortBy =
+    rawSortBy && slugToShopName(rawSortBy) !== null ? rawSortBy : null;
+  const rawSortDir = pickString(sp.sortDir);
+  const sortDir: "asc" | "desc" =
+    rawSortDir === "desc" ? "desc" : "asc";
+
   const data = await getTrackCompareData(
     Number.isFinite(weekNum) ? weekNum : 0,
     Number.isFinite(trackId) ? trackId : 0,
     { seasonId, carClass }
   );
+
+  // Sort rows by the chosen shop's lap time. Nulls always last.
+  const sortedRows = sortBy
+    ? [...data.rows].sort((a, b) => {
+        const shopName = slugToShopName(sortBy);
+        const aCell = a.cells.find((c) => c.shopName === shopName);
+        const bCell = b.cells.find((c) => c.shopName === shopName);
+        const aT = aCell?.lapTimeSeconds ?? null;
+        const bT = bCell?.lapTimeSeconds ?? null;
+        if (aT == null && bT == null) return a.carName.localeCompare(b.carName);
+        if (aT == null) return 1;
+        if (bT == null) return -1;
+        return sortDir === "desc" ? bT - aT : aT - bT;
+      })
+    : data.rows;
+
+  // Builds the href for a sort-column click, cycling neutral → asc → desc → neutral.
+  function buildSortHref(targetSlug: string): string {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (k === "sortBy" || k === "sortDir") continue;
+      if (typeof v === "string") params.set(k, v);
+      else if (Array.isArray(v) && v[0]) params.set(k, v[0]);
+    }
+    let nextBy: string | null = targetSlug;
+    let nextDir: "asc" | "desc" | null = "asc";
+    if (sortBy === targetSlug) {
+      if (sortDir === "asc") {
+        nextDir = "desc";
+      } else {
+        // desc → neutral
+        nextBy = null;
+        nextDir = null;
+      }
+    }
+    if (nextBy) params.set("sortBy", nextBy);
+    if (nextDir) params.set("sortDir", nextDir);
+    const tail = params.toString();
+    return tail ? `?${tail}` : "";
+  }
 
   // Resolve track name from rows first; fall back to a direct DB lookup so
   // the header is correct even when no listings exist for the current filter.
@@ -97,9 +146,18 @@ export default async function TrackPage({
       <CompareFilters
         data={data}
         action={`/week/${weekNum}/track/${trackId}`}
+        sortBy={sortBy}
+        sortDir={sortBy ? sortDir : null}
       />
 
-      <CompareTable rows={data.rows} shops={data.shops} hideTrackColumn />
+      <CompareTable
+        rows={sortedRows}
+        shops={data.shops}
+        hideTrackColumn
+        sortBy={sortBy}
+        sortDir={sortBy ? sortDir : null}
+        buildSortHref={buildSortHref}
+      />
 
       <ScrapingLegend shops={shopsWithNotes} />
     </div>

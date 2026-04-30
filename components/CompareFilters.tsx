@@ -9,6 +9,9 @@ type Props = {
   data: FilterData;
   /** Defaults to "/" — pass the current path for week/track pages. */
   action?: string;
+  /** Preserved across filter submissions so sort survives a class change. */
+  sortBy?: string | null;
+  sortDir?: "asc" | "desc" | null;
 };
 
 /**
@@ -16,7 +19,7 @@ type Props = {
  * No client JS, no useState. Selecting + Apply navigates.
  * Week and Track come from the URL path on sub-pages, not this form.
  */
-export function CompareFilters({ data, action = "/" }: Props) {
+export function CompareFilters({ data, action = "/", sortBy, sortDir }: Props) {
   return (
     <form
       method="get"
@@ -60,6 +63,8 @@ export function CompareFilters({ data, action = "/" }: Props) {
       >
         Apply
       </button>
+      {sortBy && <input type="hidden" name="sortBy" value={sortBy} />}
+      {sortBy && sortDir && <input type="hidden" name="sortDir" value={sortDir} />}
     </form>
   );
 }

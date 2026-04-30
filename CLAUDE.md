@@ -1078,4 +1078,43 @@ Format per entry:
 **Open:**
 - All round-15 carry-overs unchanged: `getCompareData` dead export, `Oval` class dropdown entry, 14 prefix-match false-positive track rows, mobile 5-column table UI.
 - No INGEST_SECRET rotation needed this round.
+
+### 2026-04-30 14:00 — frontend-dev (round 17)
+**Task:** Add per-shop sortable lap-time columns to the leaf comparison table (`/week/[weekNum]/track/[trackId]`). Server-side sort, no client JS.
+**Files:** `lib/shop-slug.ts` (new), `components/CompareTable.tsx`, `components/CompareFilters.tsx`, `app/week/[weekNum]/track/[trackId]/page.tsx`
+**Decisions:**
+- New `lib/shop-slug.ts` exports `slugToShopName(slug): string | null` and `shopNameToSlug(name): string`. Slugs exactly match the `?shop=` enum in `/api/ingest/route.ts` (`hymo`, `grid-and-go`, `gosetups`, `majors-garage`, `p1doks`).
+- Sort state lives entirely in URL params `?sortBy=<slug>&sortDir=asc|desc`. Invalid slug falls through to default order; missing `sortDir` defaults to `asc`. Sort applied in the page via `[...data.rows].sort(...)` — does not mutate `data.rows`.
+- `buildSortHref(targetSlug)` defined in the page (not the table), cycles neutral → asc → desc → neutral, preserving all other searchParams. Passed as a callback prop so `CompareTable` stays purely presentational.
+- `CompareTable` gains three optional props (`sortBy`, `sortDir`, `buildSortHref`). When `buildSortHref` is absent (every caller except the leaf page), no sort `<a>` elements render — backward-compatible.
+- Active sort column header shows `↑`/`↓` in `text-blue-400`; inactive columns show `↕` in `text-gray-500`.
+- `CompareFilters` gains `sortBy`/`sortDir` optional props and emits `<input type="hidden">` for each when set, preserving sort across class-filter changes.
+- All existing invariants preserved: `hideTrackColumn` (round 15), P1Doks price suppression (round 12), shop column order.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; same 6 routes as round 16.
+**Open:** All round-16 carry-overs unchanged (`getCompareData` dead export, `Oval` class dropdown entry, mobile 5-column table UI). Sort only applies to the leaf page per spec.
 **Open:** Same carry-overs as round 15 (getCompareData dead export, Oval class, 14 prefix-match tracks, mobile 5-column table, track "55" slug-leak).
+
+### 2026-04-30 14:45 — team-qa (round 17)
+**Task:** Verify server-side per-shop sortable lap-time columns on `/week/[weekNum]/track/[trackId]`.
+**Tests added/changed:** none (curl-based verification, no test framework changes).
+**Suite result:** lint green, build green (6 routes, same as round 16).
+**Manual checks:**
+- Track/week with data: track 29 (Sebring), week 2, season 1 -- 29 cars, 5 shops. Used instead of track 57 week 7 (no local data).
+- Default (no sort): 5 sort `<a>` elements, all `↕` indicators, hrefs `?seasonId=1&sortBy=<slug>&sortDir=asc`. PASS.
+- HYMO asc (`?sortBy=hymo&sortDir=asc`): HYMO header `↑` (blue-400), others `↕`. Car order matches DB `ORDER BY lt.timeSeconds ASC NULLS LAST` exactly (Acura ARX-06 GTP 1:48.090 first; GT4 nulls last). PASS.
+- HYMO desc (`?sortBy=hymo&sortDir=desc`): HYMO header `↓`, href cycles to `?seasonId=1` (neutral). Slowest GT4 cars first. PASS.
+- P1Doks asc: P1Doks `↑`, others `↕`. PASS.
+- Invalid `?sortBy=invalid`: all `↕`, default order. PASS.
+- Missing `?sortDir` with valid sortBy: defaults to asc, HYMO shows `↑`. PASS.
+- Sort cycle (on desc, click other shop): GnG href is `?seasonId=1&sortBy=grid-and-go&sortDir=asc`. PASS.
+- Filter + sort coexistence (`?carClass=GT3&sortBy=hymo&sortDir=asc`): only GT3 cars shown, sorted asc. Hidden inputs `name="sortBy" value="hymo"` and `name="sortDir" value="asc"` present in form. PASS.
+- GT4 + HYMO asc: empty state (no GT4 at track 28 week 3), 200 response. PASS.
+**Bugs found:** none.
+**Regressions:**
+- `/week/3/track/28?carClass=GT3` no sort: Track column absent (round-15 invariant). No hidden sort inputs (no sort active). PASS.
+- `/compare` -> 307. PASS.
+- `/api/ingest` GET -> 405, POST without bearer -> 401. PASS.
+- `/` -> 200, no sort UI on home. `h-24` present (round-16 invariant). PASS.
+- `/week/3` -> 200, no sort UI on week page. `h-24` x256 (round-16 invariant). PASS.
+- P1Doks price suppression: 0 price strings (`$N.NN`) in any rendered page. PASS.
+**Open:** All round-16 carry-overs unchanged (getCompareData dead export, Oval class, mobile 5-column table). Track 57 week 7 has no local data; production-side sort is confirmed working by code/logic review since local DB only has scraped data.
