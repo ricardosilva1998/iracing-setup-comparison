@@ -439,4 +439,19 @@ Format per entry:
 - **QA verdict: PASS for round 6.** team-deployment is cleared to ship.
 **Open:** none.
 
+### 2026-04-30 00:25 — team-deployment (round 6)
+**Task:** Commit + push round-6 Category-filter removal; trigger Railway redeploy; healthcheck production; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry), no other changes -- backend-dev's r6 diff already on main}
+**Decisions:**
+- **Pre-flight:** `git status` showed exactly the 4 expected modified files (CLAUDE.md, app/compare/page.tsx, components/CompareFilters.tsx, lib/compare-data.ts). No `.env`, `dev.db`, `node_modules`, `.next`, `tsconfig.tsbuildinfo`, or `app/generated/` in the staged set -- explicit add-by-name per project pattern.
+- **Commit `16fdad8`:** "feat(round 6): remove Category filter from /compare". 4 files changed, 33 insertions, 32 deletions. Pushed to `origin/main` (d29b101..16fdad8). Push succeeded; remote SHA matches local.
+- **Railway deploy triggered explicitly** via `railway up --detach` (matches the round 5 pattern; the GitHub watcher does not auto-deploy this service per the round-5 evidence). Deployment id `ec048b4d-7f04-4a4c-bc4c-edb8540a10b6`. Status progression: BUILDING (~85s) -> DEPLOYING -> SUCCESS.
+- **Production healthcheck:** `GET /` -> 200 (12.4 KB). `GET /compare` -> 200 (878 KB body, **701 "Open setup" links** -- same as round 5 post-ingest baseline; no data lost). `GET /compare?categoryId=1` -> 200 (878 KB, **57-byte delta vs unfiltered** -- the legacy query string is silently ignored by Next 16's `searchParams` reader; the tiny size difference is `?categoryId=1` echoed in `selected=""` attributes nowhere -- it's a wash. Crucially, no 500. ). `GET /compare?carClass=GT3&weekNum=3` -> 200 (90 KB body, 56 Open-setup links + lap times like `1:44.540`, `1:12.840`, `7:52.020`, `1:10.720`).
+- **Filter UI removal verified in prod HTML:** `name="categoryId"` -> **0 hits**, `>Category<` -> **0 hits**. `name="seasonId"` / `name="carClass"` / `name="weekNum"` -> 1 each (intact).
+- **Logs (~20s post-deploy tail):** Mounting volume on /var/lib/containers/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Local: http://localhost:8080 -> Network: http://0.0.0.0:8080 -> Ready in 0ms. No error spew, no crashes, no restart cycles.
+- **Round 6: SHIPPED.** Live URL: https://iracing-setup-comparison-production.up.railway.app/compare -- form now shows Season + Class + Week; no Category selector. All 701 listings still display.
+**Open:**
+- **Local dev server `b67p6rqbh` was DOWN at start-of-round** (curl `000`, exit 7). QA spun up `bc8fldbsq` on port 3030 for tests and tore it down after. The user may want to restart their dev task to pick up the round 6 changes locally; the production deploy is already live and authoritative.
+- All round-5 carry-overs unchanged (Playwright-in-runner, cron caller, track normalisation, S1 seed). No new opens introduced by round 6.
+
 
