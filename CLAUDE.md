@@ -1057,4 +1057,25 @@ Format per entry:
 - **Regression invariants:** `/` -> 200, 13 WeekCards; `/week/3/track/28?carClass=GT3` -> 200, 100 Open-setup links, 0 price occurrences, 0 Track-column occurrences, 5 shops present; `/compare` -> 307 to `/`; `/?weekNum=3&carClass=GT3` -> 307 to `/week/3?carClass=GT3`; Aston Martin Vantage GT3 EVO = 1 row, class=GT3 in DB. All PASS.
 - **Track "55" carry-over confirmed:** Track id=112, name="55" -- the round-10 MG slug-leak carry-over; not a new regression this round.
 - **QA verdict: PASS for round 16.** team-deployment cleared to ship.
+
+### 2026-04-30 18:30 — team-deployment (round 16)
+**Task:** Commit + push round-16 (track-card sort + uniform card height); trigger Railway deploy; verify production healthchecks; tail logs.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); components/WeekCard.tsx, components/TrackCard.tsx, app/week/[weekNum]/page.tsx -- all staged by frontend-dev}
+**Decisions:**
+- **Pre-flight:** `git status -uno` showed exactly 4 modified files (CLAUDE.md, app/week/[weekNum]/page.tsx, components/TrackCard.tsx, components/WeekCard.tsx). No .env, dev.db, node_modules, .next, tsconfig.tsbuildinfo, app/generated/, or any unexpected file. Secrets scan on staged diff: CLAUDE.md grep matched only historical log prose (env-var names in rotation-script documentation; no literal credential values in the new diff). Clean.
+- **Commit `c7a43fb`:** "feat(round 16): track-card sort + uniform card height". 4 files changed, 48 insertions, 14 deletions. Pushed `cd00533..c7a43fb` to `origin/main`. Push succeeded; remote SHA matches local.
+- **No ingest call needed.** UI-only round; volume DB from round 13 is still current.
+- **Railway deploy triggered** via `railway up --detach`. Deployment id `d1ab353f-cd36-4033-b78f-7ece853007fa`. Status: BUILDING -> DEPLOYING -> SUCCESS. The new image needed ~4.5min to build before switching over (the prior deployment `547dc397` served traffic until the new one was healthy). Polled every 10s until SUCCESS confirmed via `railway status --json`.
+- **Production healthchecks (all PASS):**
+  1. `GET /` -> 200 | h-24 count: 26 (2 per WeekCard × 13 = 26 DOM references). PASS.
+  2. `GET /week/3?carClass=GT3` -> 200 | h-24 count: 256 | line-clamp-2 count: 255 | Non-dimmed cards: 8 | Dimmed cards: 120. Track order (first 8): Canadian Tire Motorsport Park, Hockenheimring, Nürburgring Combined, Sachsenring, Sebring International Raceway, Shell V-Power Motorsport Park at The Bend, Sonoma Raceway, Summit Point Motorsports Park -- all alphabetical before first dim. PASS.
+  3. `GET /week/3` (unfiltered) -> 200 | 45 non-dimmed (setup > 0), 83 dimmed (0 setups). PASS.
+  4. `GET /week/3/track/28?carClass=GT3` (round-12/13/15 regression) -> 200 | 5 shop th elements (HYMO Setups, Grid-and-Go, P1Doks, GO Setups, Majors Garage) | 0 `>Track<` th | 0 P1Doks `$XX.XX` price strings. PASS.
+  5. `GET /compare` -> 307. PASS.
+  6. `GET /?weekNum=3&carClass=GT3` -> 307 to `/week/3?carClass=GT3`. PASS.
+- **Runtime log tail (~15s post-deploy):** Mounting volume on /var/lib/containers/railwayapp/bind-mounts/.../vol_597iq88no5c5ujd3 -> Starting Container -> Next.js 16.2.4 -> Ready in 0ms. No error spew, no crashes, no restart cycles.
+- **Round 16: SHIPPED.** Live URL https://iracing-setup-comparison-production.up.railway.app/week/3?carClass=GT3 now shows 8 GT3 tracks with setups (h-24 uniform height, alphabetical) before 120 dimmed zero-setup tracks.
+**Open:**
+- All round-15 carry-overs unchanged: `getCompareData` dead export, `Oval` class dropdown entry, 14 prefix-match false-positive track rows, mobile 5-column table UI.
+- No INGEST_SECRET rotation needed this round.
 **Open:** Same carry-overs as round 15 (getCompareData dead export, Oval class, 14 prefix-match tracks, mobile 5-column table, track "55" slug-leak).
