@@ -8,19 +8,16 @@ import type {
 
 export type CompareFilters = {
   seasonId?: number;
-  categoryId?: number;
   carClass?: string;
   weekNum?: number;
 };
 
 export type CompareData = {
   shops: { id: number; name: string; scrapingStatus: ScrapingStatus }[];
-  categories: { id: number; name: string }[];
   carClasses: string[];
   seasons: { id: number; year: number; quarter: number; label: string }[];
   weeks: { id: number; weekNum: number; label: string }[];
   selectedSeasonId: number | null;
-  selectedCategoryId: number | null;
   selectedCarClass: string | null;
   selectedWeekNum: number | null;
   rows: CompareRow[];
@@ -31,9 +28,8 @@ export type CompareData = {
  * Cells are returned in stable shop-id order so the columns line up.
  */
 export async function getCompareData(filters: CompareFilters): Promise<CompareData> {
-  const [shops, categories, carClassesRaw, seasons] = await Promise.all([
+  const [shops, carClassesRaw, seasons] = await Promise.all([
     prisma.shop.findMany({ orderBy: { id: "asc" } }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.car.findMany({
       select: { carClass: true },
       distinct: ["carClass"],
@@ -54,7 +50,6 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
     : [];
 
   const selectedWeekNum = filters.weekNum ?? null;
-  const selectedCategoryId = filters.categoryId ?? null;
   const selectedCarClass = filters.carClass ?? null;
 
   // Build the (car, track) row set: every (car, track) pair for which any
@@ -69,11 +64,8 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
       ...(selectedWeekNum ? { weekNum: selectedWeekNum } : {}),
     };
   }
-  if (selectedCategoryId || selectedCarClass) {
-    listingWhere.car = {
-      ...(selectedCategoryId ? { categoryId: selectedCategoryId } : {}),
-      ...(selectedCarClass ? { carClass: selectedCarClass } : {}),
-    };
+  if (selectedCarClass) {
+    listingWhere.car = { carClass: selectedCarClass };
   }
 
   const listings = await prisma.setupListing.findMany({
@@ -123,7 +115,6 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
       name: s.name,
       scrapingStatus: s.scrapingStatus as ScrapingStatus,
     })),
-    categories: categories.map((c) => ({ id: c.id, name: c.name })),
     carClasses: carClassesRaw.map((c) => c.carClass),
     seasons: seasons.map((s) => ({
       id: s.id,
@@ -137,7 +128,6 @@ export async function getCompareData(filters: CompareFilters): Promise<CompareDa
       label: w.label,
     })),
     selectedSeasonId,
-    selectedCategoryId,
     selectedCarClass,
     selectedWeekNum,
     rows: Array.from(rowMap.values()),

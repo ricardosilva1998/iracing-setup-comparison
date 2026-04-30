@@ -55,7 +55,7 @@ iracing-setup-comparison/
 │   ├── globals.css             # Tailwind v4 @theme tokens (dark gray-950 body)
 │   └── generated/prisma/       # Prisma client output (gitignored)
 ├── components/
-│   ├── CompareFilters.tsx      # Plain <form method=get>; no client JS
+│   ├── CompareFilters.tsx      # Plain <form method=get>; Season + Class + Week (Category removed in r6); no client JS
 │   ├── CompareTable.tsx        # Pivot: rows = (car, track), cols = shop
 │   └── ScrapingLegend.tsx      # Status dot per shop
 ├── lib/
@@ -412,3 +412,31 @@ Format per entry:
 - **Cron caller** -- once option (a) lands, wire a Railway cron job hitting POST /api/ingest weekly (Tuesday 00:30 UTC).
 - **Track normalisation, Coach Dave / P1Doks decision, Cognito refresh-token rotation, 2026 S1 seed** -- all carry-overs from round 3-4 still pending.
 - **INGEST_SECRET** is now the source of truth in `.env` (gitignored) and Railway variables. If the user rotates it, do both at once.
+
+### 2026-04-29 23:55 — backend-dev (round 6)
+**Task:** Remove the Category filter from /compare per user direction ("the categories are not working so remove that filter"). UI + data layer only; keep `Category` table in schema.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{components/CompareFilters.tsx, app/compare/page.tsx, lib/compare-data.ts, CLAUDE.md}
+**Decisions:**
+- **Diagnosis (investigated, not fixed -- per brief):** the filter logic in `lib/compare-data.ts` was correct (lines 72-77 pre-fix combined `categoryId` and `carClass` into a single `car: { categoryId, carClass }` Prisma where-clause, parameterised, no bug). The "not working" symptom is a **data-distribution** problem: HYMO's scraper hard-codes `category_id=1` against its API so 100% of HYMO listings (387) map to a single category, and GnG's `SERIES_MAP` (round-3) collapses every series the user races to category id 3 (Sports Car). Net: nearly all 54 cars in production share `categoryId=3`; categories 1, 2, 4, 5, 6 render empty when picked. The filter was technically correct but practically useless given the current scraping strategy. User has decided removal is the right UX call -- no pushback.
+- `lib/types.ts`: no edit needed -- `CompareFilters` and `CompareData` types are owned by `lib/compare-data.ts`, not `lib/types.ts`. (`lib/types.ts` only exports `ScrapingStatus`, `LapTimeSource`, `CompareCell`, `CompareRow` -- none reference `categoryId`.)
+- `lib/compare-data.ts`: removed `categoryId?` from `CompareFilters` type; removed `categories` and `selectedCategoryId` from `CompareData` type; dropped the `prisma.category.findMany(...)` query from the parallel-load; replaced the combined `if (selectedCategoryId || selectedCarClass) { listingWhere.car = { ... } }` block with a simpler `if (selectedCarClass) { listingWhere.car = { carClass: selectedCarClass } }`. Net -8 lines.
+- `components/CompareFilters.tsx`: deleted the Category `<label>`/`<select name="categoryId">` block (lines 33-47 pre-edit); collapsed the form grid from `lg:grid-cols-5` to `lg:grid-cols-4` so the Apply button stays right-aligned with 3 selects + 1 button. No prop signature change. Net -16 lines.
+- `app/compare/page.tsx`: removed `categoryId: pickInt(sp.categoryId)` from the `getCompareData(...)` call. The `searchParams` reader stays loose (`Record<string, string | string[] | undefined>`) so legacy URLs like `/compare?categoryId=1` are silently ignored -- no 500. Net -1 line.
+- `Category` Prisma model and `Car.categoryId` foreign key are kept intact -- still used internally by both scrapers for car-categorisation. `lib/seed.ts` 6-category seed unchanged.
+- `npm run lint` (tsc --noEmit) -> green. `npm run build` -> green; routes `/`, `/_not-found`, `/api/ingest` (dynamic), `/compare` (dynamic) all generate.
+**Open:** none from this round. Carry-overs from round 5 unchanged (Playwright-in-runner, cron caller, track normalisation, S1 seed).
+
+### 2026-04-30 00:05 — team-qa (round 6)
+**Task:** Local smoke-test the Category-filter removal: routes 200, Category select absent, legacy `?categoryId=1` silently ignored, table still renders, lint+build green.
+**Files:** none modified (verification only)
+**Decisions:**
+- The user's previous dev task `b67p6rqbh` on port 3000 was DOWN (curl `000`, exit 7) -- consistent with brief's "exit 144" note. Brought up a fresh Turbopack dev server on **port 3030** (background task `bc8fldbsq`) to avoid clobbering anything else; tore it down at end-of-test.
+- `GET /` -> 200; `GET /compare` -> 200 (2.04 MB); `GET /compare?categoryId=1` -> 200 (2.04 MB -- **same size as unfiltered**, confirming the legacy query string is silently ignored, no filtering applied, no 500); `GET /compare?carClass=GT3&weekNum=3` -> 200 (187 KB).
+- Filter form HTML grep on `/compare` body: `name="categoryId"` -> **0 matches**, `>Category<` label -> **0 matches** (Category UI is gone). `name="seasonId"` -> 1, `name="carClass"` -> 1, `name="weekNum"` -> 1 (other selects intact).
+- Class-dropdown contents unchanged: 12 canonical entries (Formula, GT2, GT3, GT4, GTE, GTP/LMDh, LMP2, LMP3, PCC, PCUP, Production, TCR). Week dropdown still has Any week + Week 1..13. Season dropdown still has 2026 S2.
+- Shop column headers all 4 present (HYMO Setups, Grid-and-Go, Coach Dave Academy, P1Doks). Lap times render on filtered view (sample: `1:44.540`, `1:35.666`, `1:12.840`, `1:05.490`, `1:44.040`).
+- `npm run lint` (tsc --noEmit) -> green. `npm run build` -> green.
+- **QA verdict: PASS for round 6.** team-deployment is cleared to ship.
+**Open:** none.
+
+

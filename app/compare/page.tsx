@@ -34,7 +34,6 @@ export default async function ComparePage({
 
   const data = await getCompareData({
     seasonId: pickInt(sp.seasonId),
-    categoryId: pickInt(sp.categoryId),
     carClass: pickString(sp.carClass),
     weekNum: pickInt(sp.weekNum),
   });
