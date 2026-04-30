@@ -1,6 +1,7 @@
 import type { CompareRow, CompareCell, ScrapingStatus } from "@/lib/types";
 import { SCRAPING_STATUS_LABELS } from "@/lib/types";
 import { shopNameToSlug } from "@/lib/shop-slug";
+import Link from "next/link";
 
 type Props = {
   rows: CompareRow[];
@@ -11,6 +12,8 @@ type Props = {
   sortDir?: "asc" | "desc" | null;
   /** Called with the target shop slug; returns the href for the next sort state. */
   buildSortHref?: (slug: string) => string;
+  /** When provided, car name cells become links to the car detail page. */
+  buildCarHref?: (carId: number) => string;
 };
 
 function formatLapTime(seconds: number | null | undefined): string {
@@ -72,6 +75,7 @@ export function CompareTable({
   sortBy = null,
   sortDir = null,
   buildSortHref,
+  buildCarHref,
 }: Props) {
   if (rows.length === 0) {
     return (
@@ -137,7 +141,16 @@ export function CompareTable({
           {rows.map((r) => (
             <tr key={`${r.carId}:${r.trackId}`} className="hover:bg-gray-900/40">
               <td className="border border-gray-800 px-3 py-2 font-medium text-gray-100 sticky left-0 bg-gray-950 z-10">
-                {r.carName}
+                {buildCarHref ? (
+                  <Link
+                    href={buildCarHref(r.carId)}
+                    className="hover:underline hover:text-blue-300 transition-colors"
+                  >
+                    {r.carName}
+                  </Link>
+                ) : (
+                  r.carName
+                )}
               </td>
               <td className="border border-gray-800 px-3 py-2 text-gray-300">
                 {r.carClass}

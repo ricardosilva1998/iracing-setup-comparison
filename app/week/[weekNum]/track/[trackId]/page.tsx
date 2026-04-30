@@ -80,6 +80,17 @@ export default async function TrackPage({
       })
     : data.rows;
 
+  // Builds the href for a car-name click, preserving all current filter state.
+  function buildCarHref(carId: number): string {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (typeof v === "string") params.set(k, v);
+      else if (Array.isArray(v) && v[0]) params.set(k, v[0]);
+    }
+    const tail = params.toString();
+    return `/week/${weekNum}/track/${trackId}/car/${carId}${tail ? `?${tail}` : ""}`;
+  }
+
   // Builds the href for a sort-column click, cycling neutral → asc → desc → neutral.
   function buildSortHref(targetSlug: string): string {
     const params = new URLSearchParams();
@@ -148,6 +159,7 @@ export default async function TrackPage({
         sortBy={sortBy}
         sortDir={sortBy ? sortDir : null}
         buildSortHref={buildSortHref}
+        buildCarHref={buildCarHref}
       />
 
     </div>

@@ -1281,4 +1281,37 @@ Format per entry:
 - /compare → 307 (r12 redirect).
 - /admin no auth → 401, WWW-Authenticate: Basic realm="iRacing Setup Admin" (r18).
 - /api/ingest GET → 405 (cron path uninterrupted).
+
+### 2026-04-30 — frontend-dev (round 20)
+**Task:** Add 4th-level drill-through: car-name cells on the track page link to a per-car detail page showing per-shop lap times and the GnG file-download placeholder.
+**Files:** `app/week/[weekNum]/track/[trackId]/car/[carId]/page.tsx` (new), `components/CompareTable.tsx` (buildCarHref prop + Link on car cell), `app/week/[weekNum]/track/[trackId]/page.tsx` (buildCarHref factory passed to CompareTable)
+**Decisions:**
+- New route `/week/[weekNum]/track/[trackId]/car/[carId]` (dynamic ƒ) confirmed in build output. Server component; no client JS.
+- `buildCarHref` added as optional prop to `CompareTable`; when absent the car cell renders plain text — no crash, no breaking change to any other caller of CompareTable.
+- Back-link preserves all querystring params (carClass, sortBy, sortDir, seasonId) so returning from the car page lands on the same sorted/filtered track view.
+- P1Doks price suppression (`cell.shopName !== "P1Doks"`) carries forward from CompareTable's Cell component pattern — confirmed via grep: 0 dollar signs in the P1Doks section of the rendered HTML.
+- GnG section renders an extra muted-gray "Files: ... download from the SPA for now" line as a layout placeholder for the future file-download feature.
+- `formatLapTime` and `formatPrice` duplicated into the new page (not extracted to a shared module) to keep the change minimal; a future round can consolidate.
+- Nonexistent carId (99999) → 200 with the empty-state paragraph + back-link (chose friendly empty state over `notFound()` to avoid 404 for stale bookmarks).
+**Open:** GnG actual `.sto` file download (backend round to probe GnG SPA for direct download URLs). `formatLapTime`/`formatPrice` duplication — low priority cleanup.
 **Open:** Round-12 carry-overs unchanged (Oval class dropdown cleanup, VRS decision, INGEST_SECRET rotation cadence, image footprint trimming).
+
+### 2026-04-30 — team-qa (round 20)
+**Task:** Verify 4th-level car detail page (`/week/[N]/track/[T]/car/[C]`) — car links on track page, car page rendering, back-link sort preservation, edge cases, full regression suite.
+**Tests added/changed:** none (curl smoke; no test files added).
+**Suite result:** 18/18 checks PASS; lint green; build green.
+**Manual checks:**
+- `npm run lint` (tsc --noEmit) → green.
+- `npm run build` → green; 9 routes (8 named + /_not-found) including new `/week/[weekNum]/track/[trackId]/car/[carId]` (dynamic ƒ).
+- Dev server port 3030; torn down after all checks.
+- **Check 3a:** `GET /week/3/track/28?carClass=GT3` → 200; `href="/week/3/track/28/car/"` count = 10; DB confirms 10 distinct GT3 cars at Hockenheim W3. PASS.
+- **Check 3b:** `GET /week/3/track/28?carClass=GT3&sortBy=hymo&sortDir=asc` → 200; car hrefs contain `sortBy=hymo`; `↑` sort indicator present (count=2). PASS.
+- **Check 4 (car page):** `GET /week/3/track/28/car/3?carClass=GT3` → 200; 1 `<h1>`; "BMW M4 GT3 EVO" in body (3); "Week 3" in body (2); back-link `href="/week/3/track/28?carClass=GT3"` present; 4 "Open setup" links; GnG placeholder text present (2 — RSC stream doubling); 0 `name="seasonId"`; 0 `name="carClass"`. All 5 shops rendered. PASS.
+- **Check 5 (P1Doks price suppression):** `GET /week/7/track/1/car/1` → 200; 0 `$X.XX` patterns in body; P1Doks section present. PASS.
+- **Check 6 (sort back-link):** `GET /week/3/track/28/car/3?carClass=GT3&sortBy=hymo&sortDir=asc` → back-link = `/week/3/track/28?carClass=GT3&sortBy=hymo&sortDir=asc`. PASS.
+- **Check 7a (invalid carId):** `GET /week/3/track/28/car/99999` → 200; "No setups found" present; back-link present. PASS.
+- **Check 7b (invalid week):** `GET /week/99/track/28/car/3` → 200 (empty state). PASS.
+- **Check 7c (no querystring):** `GET /week/3/track/28/car/3` → 200; back-link = `/week/3/track/28` (no trailing `?`). PASS.
+- **Regression:** `/` → 200; banner=0; Compare nav=0; SVG=1; Apply button=0. `/week/3` → 200. Track page: Track col hidden, sort indicators (`↕`) = 2. `/compare` → 307. `/?weekNum=3&carClass=GT3` → 307. `/api/ingest` GET → 405; POST no bearer → 401. `/admin` no auth → 503 (expected — ADMIN_USER/PASSWORD were removed from .env after r19 cleanup; 503 = misconfigured is the designed behaviour per r18). PASS.
+**Bugs found:** none.
+**Open:** GnG actual `.sto` file download (backend round). `formatLapTime`/`formatPrice` duplication across track page + car page — low priority consolidation. Round-12 carry-overs unchanged.
