@@ -26,8 +26,8 @@ interface Track {
 }
 
 interface Car {
-  carId: number;
-  carName: string;
+  id: number;
+  name: string;
   carClass: string;
 }
 
@@ -354,7 +354,7 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
     }
   }
 
-  const selectedCar = cars.find((c) => c.carId === carId);
+  const selectedCar = cars.find((c) => c.id === carId);
   const selectedTrack = tracks.find((t) => t.id === trackId);
 
   return (
@@ -438,8 +438,8 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
           >
             <option value="">Select car…</option>
             {cars.map((c) => (
-              <option key={c.carId} value={c.carId}>
-                {c.carName} ({c.carClass})
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.carClass})
               </option>
             ))}
           </select>
@@ -480,7 +480,7 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
                       }
                       onClick={() =>
                         dlState === "idle" &&
-                        handleDownload(sf, selectedCar.carName, selectedTrack.name)
+                        handleDownload(sf, selectedCar.name, selectedTrack.name)
                       }
                       disabled={dlState === "downloading" || dlState === "done"}
                     >

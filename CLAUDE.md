@@ -1681,3 +1681,17 @@ Format per entry:
 - Updater cannot be smoke-tested on macOS — requires a signed Windows MSI install. First real test happens when backend-dev/team-deployment tags `bridge-v0.1.4` and a Windows user installs it over `v0.1.3`.
 - `bridge-app/src-tauri/target/` Cargo lock will update to resolve `tauri-plugin-process` on first `cargo build` (Rust compile, owned by build pipeline).
 - When a new bridge release ships: add a new entry at the top of `FALLBACK_RELEASES` in `app/releases/page.tsx` as a belt-and-suspenders backup.
+
+### 2026-04-30 — backend-dev (round 23-fix)
+**Task:** Add `/api/latest-bridge` proxy endpoint so the Tauri updater can resolve `latest.json` from the private GitHub repo; bump bridge to v0.1.4 with the new endpoint.
+**Files:** app/api/latest-bridge/route.ts (new), bridge-app/src-tauri/tauri.conf.json, bridge-app/package.json, bridge-app/src-tauri/Cargo.toml
+**Decisions:**
+- **New route `app/api/latest-bridge/route.ts`**: `force-dynamic`, public (no bearer auth on our side — the token-protected layer is GitHub). Reads `GITHUB_TOKEN` env var; missing → 503. Fetches `api.github.com/repos/.../releases/latest` with `Authorization: Bearer ${token}` + `next: { revalidate: 60 }` (1-min edge cache). Finds `latest.json` in the `assets` array, fetches its `browser_download_url` with the same token, returns the manifest body with `Content-Type: application/json` + `Cache-Control: public, max-age=60`. GitHub 404 → 204 No Content (Tauri treats as "no update"); 401/403 → 503; network error → 502. OPTIONS handler for CORS preflight. `Access-Control-Allow-Origin: *` on every response (Tauri updater has no browser Origin).
+- **Endpoint switch in `tauri.conf.json`**: `plugins.updater.endpoints[0]` changed from `https://github.com/ricardosilva1998/.../releases/latest/download/latest.json` to `https://iracing-setup-comparison-production.up.railway.app/api/latest-bridge`. Old GitHub URL is gone (grep returns 0).
+- **Version bumped to 0.1.4** in all three locations: `bridge-app/package.json`, `bridge-app/src-tauri/tauri.conf.json`, `bridge-app/src-tauri/Cargo.toml`.
+- **Smoke results**: no `GITHUB_TOKEN` in local `.env` → `GET /api/latest-bridge` returns 503 `{"error":"Updater proxy not configured"}` (correct). CORS headers verified: `Access-Control-Allow-Origin: *` + `Access-Control-Allow-Methods: GET, OPTIONS` present on the response. With a valid token in production, the route will return the v0.1.3 `latest.json` manifest to the v0.1.4 updater.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; `/api/latest-bridge` (dynamic ƒ) appears in the route table alongside the existing routes.
+**Open:**
+- `GITHUB_TOKEN` must be set on Railway before team-deployment deploys this round. Fine-grained PAT with read-only Contents scope on this repo is sufficient. Set via `railway variables --set "GITHUB_TOKEN=<token>" --skip-deploys`.
+- Once Railway is deployed and the token is live, the updater flow can be verified by running: `curl -sS https://iracing-setup-comparison-production.up.railway.app/api/latest-bridge` — should return the v0.1.3 `latest.json` manifest.
+- team-deployment owns tagging `bridge-v0.1.4` and triggering the MSI build via GitHub Actions. The tag push was explicitly out of scope for this round.
