@@ -36,7 +36,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             bridge-app/src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('bridge-app/src-tauri/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('bridge-app/src-tauri/Cargo.lock', 'bridge-app/src-tauri/tauri.conf.json') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -59,6 +59,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
+      - name: List bundle output (diagnostic)
+        shell: bash
+        run: |
+          echo "=== bundle/msi directory contents ==="
+          ls -la bridge-app/src-tauri/target/release/bundle/msi/ || echo "(directory missing)"
+          echo "=== all bundle artefacts ==="
+          find bridge-app/src-tauri/target/release/bundle/ -type f | sort || echo "(nothing found)"
+
       - name: Locate MSI and signature files
         id: locate
         shell: bash
@@ -69,6 +77,10 @@ jobs:
           echo "sig=$SIG" >> "$GITHUB_OUTPUT"
           echo "Found MSI: $MSI"
           echo "Found SIG: $SIG"
+          if [ -z "$SIG" ]; then
+            echo "ERROR: No .msi.zip.sig file found. Check that bundle.createUpdaterArtifacts=true in tauri.conf.json and that TAURI_SIGNING_PRIVATE_KEY is set."
+            exit 1
+          fi
 
       - name: Generate latest.json update manifest
         shell: bash
