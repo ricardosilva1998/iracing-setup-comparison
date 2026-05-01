@@ -1596,5 +1596,6 @@ Format per entry:
 - `Cargo.toml` unchanged — `[lib]` + `[[bin]]` sections were already correct; the missing file was the only problem.
 - `cargo check` not run locally (Rust not installed on Mac); GitHub Actions Windows runner is the gate.
 - Tag `bridge-v0.1.1` pushed to trigger the workflow.
-**Open:** GitHub Actions run outcome pending — update this entry once the run completes.
+**Open:**
+- GH Actions run `25211194207` for `bridge-v0.1.1`: **FAILURE** — but a NEW error. The `lib.rs` fix fully resolved the original "can't find library" error. New error: `` `icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build ``. The `bridge-app/src-tauri/icons/` directory (5 placeholder icons: 128x128.png, 128x128@2x.png, 32x32.png, icon.icns, icon.ico) was never committed in round 22b — the directory was untracked. Fix: `git add bridge-app/src-tauri/icons/` committed in the same round as this log entry. Tag `bridge-v0.1.2` pushed immediately after.
 - All round-11 carry-overs unchanged (VRS, image footprint, etc).
