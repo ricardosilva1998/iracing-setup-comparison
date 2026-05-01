@@ -47,6 +47,12 @@ export default function RootLayout({
                 iRacing Setup Comparison
               </span>
             </Link>
+            <Link
+              href="/releases"
+              className="text-sm text-gray-400 hover:text-gray-200 transition-colors duration-150"
+            >
+              Bridge App
+            </Link>
           </div>
         </header>
         <main className="flex-1">{children}</main>

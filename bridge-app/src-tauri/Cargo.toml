@@ -1,0 +1,43 @@
+[package]
+name = "iracing-setup-bridge"
+version = "0.1.0"
+description = "iRacing Setup Bridge — desktop app to download setups from the comparison site"
+authors = ["Ricardo Silva"]
+edition = "2021"
+
+[lib]
+name = "iracing_setup_bridge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "iracing-setup-bridge"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# reqwest with rustls-tls so the Windows binary has no OpenSSL dependency.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+# keyring v3 uses the OS credential store (Windows Credential Manager on Windows).
+keyring = { version = "3", features = ["windows-native"] }
+# dirs for locating the OS config directory (%APPDATA% on Windows).
+dirs = "5"
+anyhow = "1"
+# zip for unpacking the downloaded setup archive.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tokio = { version = "1", features = ["full"] }
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

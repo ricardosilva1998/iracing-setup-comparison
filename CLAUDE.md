@@ -1499,3 +1499,66 @@ Format per entry:
 - Car detail /week/3/track/28/car/3: "Open setup" 10x, "Browse setup files" 2x, "Download all" 2x, zip href 2x — all present.
 - All regression checks pass: /compare → 307, /?weekNum=3&carClass=GT3 → 307, /admin no-auth → 401, /admin with creds → 200, /api/ingest GET → 405, POST no bearer → 401.
 - Round-12 backlog items (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint) all unchanged.
+
+### 2026-04-30 16:30 — backend-dev (round 22b)
+**Task:** Deliverable A — four public JSON picker API endpoints for the bridge app. Deliverable B — Tauri bridge app scaffold in `bridge-app/`. Deliverable C — GitHub Actions Windows MSI build workflow.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{app/api/picker/weeks/route.ts (new), app/api/picker/tracks/route.ts (new), app/api/picker/cars/route.ts (new), app/api/picker/files/route.ts (new), bridge-app/package.json (new), bridge-app/tsconfig.json (new), bridge-app/vite.config.ts (new), bridge-app/index.html (new), bridge-app/src/main.tsx (new), bridge-app/src/App.tsx (new), bridge-app/src-tauri/Cargo.toml (new), bridge-app/src-tauri/build.rs (new), bridge-app/src-tauri/tauri.conf.json (new), bridge-app/src-tauri/src/main.rs (new), bridge-app/src-tauri/icons/{32x32.png,128x128.png,128x128@2x.png,icon.icns,icon.ico} (new), bridge-app/README.md (new), .github/workflows/bridge-build.yml (new), tsconfig.json (exclude bridge-app)}
+**Decisions:**
+- **Picker routes:** all four under `app/api/picker/` — public (no auth), CORS headers `Access-Control-Allow-Origin: *` + OPTIONS pre-flight. `/weeks` wraps `getWeekList({})`. `/tracks?weekNum=N` wraps `getTrackList(weekNum, {})`, filters to setupCount>0 only. `/cars?weekNum=N&trackId=T` wraps `getTrackCompareData` and projects to `{ id, name, carClass }` with carId deduplication. `/files?weekNum=N&trackId=T&carId=C` queries `SetupListing` directly (resolves active season), extracts GnG datapackId from listing URL via `startsWith("https://app.grid-and-go.com/#/datapacks/")` + `validateDatapackId`, calls `getOrFetchManifest` for GnG cells, returns `{ shopName, shopSlug, datapackId, fileNames, cached }` per shop. Non-GnG shops get `datapackId: null, fileNames: []`. Per-manifest error is isolated (does not fail the whole response).
+- **Root tsconfig.json:** added `"bridge-app"` to `"exclude"` array — the `**/*.ts` glob was pulling in `bridge-app/vite.config.ts` which imports packages not in root `node_modules`. Fix confirmed: `npm run lint` clean after exclusion.
+- **Tauri scaffold:** Tauri 2 + React 18 + Vite 6. Six Rust commands: `get_settings` (reads `%APPDATA%/iracing-setup-bridge/config.json`; computes `hasCredentials` from keychain), `save_settings` (writes config JSON), `save_credentials` (stores password in OS keychain via `keyring` crate, account = username), `test_connection` (Basic Auth GET /admin; returns `{ ok, message }`), `fetch_picker` (proxies GET to `/api/picker/<endpoint>`; strips leading slash to prevent URL path injection), `download_setups` (slugifies all path segments, validates datapackId, GET `/api/files/<id>/zip` with Basic Auth, unzips into `<iracingRoot>/<carSlug>/<seasonLabel>/<trackSlug>/<shopSlug>/`, rejects unsafe zip entry filenames). Folder layout matches user spec exactly (example: `bmw-m4-gt3-evo/26s2/hockenheimring/grid-and-go/*.sto`).
+- **Cargo.toml deps:** `tauri 2`, `tauri-plugin-shell 2`, `serde + serde_json`, `reqwest 0.12 (rustls-tls + json + blocking)`, `keyring 3 (windows-native)`, `dirs 5`, `anyhow 1`, `zip 2 (deflate)`, `tokio 1 (full)`. `rustls-tls` chosen so Windows binary has no OpenSSL dependency.
+- **Placeholder icons:** 5 files generated via Python3 (no extra tools): `32x32.png`, `128x128.png`, `128x128@2x.png` (all teal-400 solid fill), `icon.icns` (PNG renamed; Tauri accepts it for non-Mac builds), `icon.ico` (1×1 ICO structure).
+- **GitHub Actions workflow `bridge-build.yml`:** triggers on `bridge-v*` tags + `workflow_dispatch`. Runs on `windows-latest`, 30-min timeout. Steps: checkout → `dtolnay/rust-toolchain@stable` (target x86_64-pc-windows-msvc) → `actions/setup-node@v4` (Node 22) → Cargo + npm cache → `npm install` → `npm run tauri build` → `softprops/action-gh-release@v2` (uploads `.msi` glob; skipped on `workflow_dispatch` since no tag).
+- **Smoke tests (all pass, port 3030):** `/api/picker/weeks` → 200, 13 weeks with setupCount. `/api/picker/tracks?weekNum=3` → 200, 45 tracks (setupCount>0). `/api/picker/cars?weekNum=3&trackId=28` → 200, 16 cars. `/api/picker/files?weekNum=3&trackId=28&carId=3` → 200, 5 shop entries; GnG entry has `datapackId: "b4SgQqqz5q_V"`, 10 fileNames, `cached: true`; other 4 shops have `datapackId: null, fileNames: []`.
+- **Rust toolchain:** `cargo` and `rustup` are NOT installed on the user's Mac. `cargo check` could not be run locally. The Windows CI build (GitHub Actions `windows-latest`) is the authoritative Rust compile check. Flagged explicitly — do not assume Rust compiles until the first CI run.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; all 4 picker routes appear as dynamic ƒ. YAML validation (`python3 yaml.safe_load`) → valid.
+**Open:**
+- **`cargo check` on Mac not possible** — Rust not installed. First CI run on tag push `bridge-v0.1.0` will be the compile gate. If `keyring v3` `windows-native` feature causes compile errors on the Windows runner, the fallback is `keyring = { version = "2" }` (no feature flag needed).
+- **`bridge-app/package-lock.json` absent** — `npm install` has not been run in `bridge-app/` (would pull ~200 MB node_modules). The CI workflow runs `npm install` before the build. For local Mac dev, `cd bridge-app && npm install` is needed before `npm run tauri dev`.
+- **Bridge UI (frontend-dev next round):** `bridge-app/src/App.tsx` is a placeholder. The full Season → Week → Track → Car picker UI + download progress is frontend-dev's scope.
+- **`/releases` page on the website** (listed as not-doing-this-round per brief) — frontend-dev next round.
+- **Icon quality:** placeholder icons are solid teal-400 blocks. Replace with a real icon before the first public release (a wrench or the site's existing SVG icon rasterised to the required sizes).
+
+### 2026-04-30 14:30 — frontend-dev (round 22b)
+**Task:** Deliverable A — React UI in `bridge-app/src/App.tsx`; Deliverable B — `/releases` page + header nav link.
+**Files:** bridge-app/src/App.tsx, app/releases/page.tsx (new), app/layout.tsx
+**Decisions:**
+- **Tailwind not wired in bridge-app** — `vite.config.ts` has no Tailwind plugin and `package.json` has no Tailwind dep. Added a self-contained inline-styles system (dark gray-950 / surface gray-900 theme matching the website's color tokens) instead of adding Tailwind as a new dep. Zero config change to the Tauri Vite setup.
+- **`@tauri-apps/api/core` confirmed correct** — `package.json` has `@tauri-apps/api: ^2.5.0` (Tauri v2); the `invoke` import path is `@tauri-apps/api/core`. Used throughout App.tsx.
+- **Two-screen router via `useState<Screen | null>`** — `null` = loading splash, `"settings"` = SettingsScreen, `"picker"` = PickerScreen. No react-router, no Zustand.
+- **Settings screen:** all four fields (serverUrl, iracingRoot, username, password); Save & Test Connection calls `save_settings` → `save_credentials` → `test_connection` in sequence; success auto-advances to Picker after 800 ms.
+- **Picker screen:** cascading Week → Track → Car dropdowns via `fetch_picker` invoke; Tracks sorted setupCount>0 first then alphabetical (round-16 pattern); Files panel appears when all three are selected; GnG rows (where `datapackId` is non-null) show a green Download All button with idle/downloading/done/error states; slugify() mirrors Rust's `slugify()` for path segments.
+- **Error UX:** red sticky banner at top of screen for any `invoke` rejection; dismissable. Per-field inline success/error messages on the Settings form. Download button shows "Retry" on error.
+- **`/releases` page:** static prerendered (`○`); hardcoded empty-state per task option (a); GitHub API TODO comment documents the token-auth path; "View latest builds on GitHub" link targets the private repo's releases page; How-it-works `<ol>` below.
+- **Header nav link:** additive single `<Link href="/releases">Bridge App</Link>` in `app/layout.tsx` inside the existing flex container; `text-gray-400 hover:text-gray-200` to stay subtle.
+- **`npm install` in bridge-app succeeded** — 74 packages, 0 vulnerabilities.
+- **Vite dev server confirmed** — `npm run dev` in bridge-app → VITE v6.4.2 ready in 329 ms; `curl localhost:1420` → HTTP 200.
+- **`tsc --noEmit` in bridge-app** → clean (strict mode, `noUnusedLocals`, `noUnusedParameters` all pass).
+- **Root `npm run lint`** → clean. **Root `npm run build`** → green; `/releases` appears as `○ (Static)`.
+**Open:**
+- `npm run tauri dev` (desktop window) not tested on Mac — Rust/cargo not installed (round-22b backend-dev note). The Vite browser preview at localhost:1420 is the closest local smoke possible.
+- Tauri `invoke` calls will return errors in the browser (no Rust backend) — the error banner will fire on every `get_settings` call when running outside Tauri. Expected; not a bug.
+- `/releases` GitHub API integration (token-auth path) is deferred until the repo goes public or `GITHUB_TOKEN` is set.
+- All round-22a carry-overs unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
+
+### 2026-04-30 11:20 — team-qa (round 22b)
+**Task:** Verify Tauri bridge-app scaffold + 4 picker API routes + /releases page + nav link + regression suite.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) -> green. `npm run build` -> green. 18 routes generated; all 4 picker routes present as ƒ (dynamic): /api/picker/weeks, /api/picker/tracks, /api/picker/cars, /api/picker/files. /releases present as ○ (static). /compare present as ƒ (middleware redirect). 14-18 route count matches brief.
+- **Picker API smoke (dev server port 3030):**
+  - `GET /api/picker/weeks` -> 200, `{ weeks: [...] }`, 13 entries, keys `weekNum / label / setupCount`. PASS.
+  - `GET /api/picker/tracks?weekNum=3` -> 200, `{ tracks: [...] }`, 45 entries with `id / name / setupCount`. PASS (45 tracks with listings at week 3; ~128 total tracks exist but only 45 have setups this week).
+  - `GET /api/picker/cars?weekNum=3&trackId=28` -> 200, `{ cars: [...] }`, 16 cars at Hockenheim W3 with `id / name / carClass`. PASS.
+  - `GET /api/picker/files?weekNum=3&trackId=28&carId=22` -> 200, `{ files: [...] }`, 5 entries (one per shop). GnG: datapackId=`xHGoM2Zss6hQ` (non-null), fileNames count=10, cached=true. HYMO/GO/MG/P1Doks: datapackId=null, fileNames=[]. PASS. (Note: response key is `files`, not `entries`; brief described `entries` but route code uses `files`. Frontend-dev should confirm bridge-app reads `files`.)
+  - CORS headers on every endpoint: `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET, OPTIONS`, `Access-Control-Allow-Headers: Content-Type`. PASS.
+  - OPTIONS preflight: 204 No Content + CORS headers. PASS.
+- **/releases page:** `GET /releases` -> 200; body contains "iRacing Setup Bridge", "No bridge releases yet", and `github.com` reference. PASS.
+- **Nav link:** `/` HTML contains `>Bridge App<` (count=1). PASS.
+- **Regression:** `/` 200; `/week/3` 200 (track hrefs rendered); `/compare` 307; `/?weekNum=3&carClass=GT3` 307; `/api/ingest` GET 405; POST no bearer 401; `/admin` no creds -> 503 (correct per proxy.ts documented behavior: "admin not configured" when ADMIN_USER env var absent).
+- **Bridge app:** `npm install` -> 0 vulnerabilities. `npx tsc --noEmit` -> green (no output). Vite server already running on 1420 (prior session); `GET http://localhost:1420/` -> 200, `<title>iRacing Setup Bridge</title>`. YAML workflow valid (`python3 yaml.safe_load`). Cargo.toml, main.rs, tauri.conf.json all present.
+**Open:**
+- `/api/picker/files` response key is `files` (not `entries` as described in brief). Frontend-dev should confirm bridge-app reads `files` key.
+- `invoke` calls in Vite browser preview fail as expected (no Rust backend in browser mode). Not a bug.
+- `/releases` GitHub API deferred until repo is public or GITHUB_TOKEN set (documented carry-over).
