@@ -1870,3 +1870,25 @@ Format per entry:
 - v0.1.6 → v0.1.7 is the **first in-app update ever** — users on v0.1.6 can go to Settings → Check for Updates and install v0.1.7 without touching a browser or manually downloading the MSI. The updater path (fixed in v0.1.6-ACL) is fully exercised for the first time.
 - Browse buttons require runtime validation inside the Tauri app (dialog plugin does not work in Vite browser dev session). The Windows build passed all ACL gates; runtime smoke is the user's install.
 - All round-12 backlog carry-overs unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
+
+### 2026-04-30 — backend-dev (round 25-fix)
+**Task:** Fix stuck "Installing..." updater on Windows; bump version to 0.1.8.
+**Files:** bridge-app/src-tauri/tauri.conf.json, bridge-app/package.json, bridge-app/src-tauri/Cargo.toml
+**Decisions:**
+- `plugins.updater.windows.installMode` changed `"passive"` → `"basicUi"`. Root cause: passive runs the MSI silently — UAC prompts or any installer error produce no visible UI, so `downloadAndInstall()` never returns and the button stays stuck. `basicUi` shows the standard MSI installer window; user sees progress, can confirm UAC.
+- Version bumped 0.1.7 → 0.1.8 in all three manifests (tauri.conf.json, package.json, Cargo.toml). Verified: `installMode=basicUi` via python3 JSON parse; all three version fields print `0.1.8`; `tsc --noEmit` green.
+- Fix 2 (wiring `downloadAndInstall(onEvent)` to surface download-progress bytes and a "Launching installer..." state) is frontend-dev's lane — not touched here.
+**Open:** frontend-dev should wire `downloadAndInstall(onEvent)` progress events so the UI shows download bytes and transitions to "Launching installer..." before the MSI window appears.
+
+### 2026-04-30 — frontend-dev (round 25-fix)
+**Task:** Wire `downloadAndInstall(onEvent)` progress callback so the user sees download progress instead of a frozen "Installing…" button.
+**Files:** bridge-app/src/App.tsx, CLAUDE.md
+**Decisions:**
+- Added `downloadProgress: { downloaded, total, phase }` state slot and `launchingHintVisible` boolean to `SettingsScreen`. Both are `null`/`false` on mount; reset to `null` on error.
+- `install` closure in `handleCheckForUpdates` now calls `update.downloadAndInstall(onEvent)` wrapped in try/catch. `Started` event sets `total = event.data?.contentLength ?? 0`; `Progress` accumulates `downloaded += event.data?.chunkLength ?? 0`; `Finished` transitions `phase` to `"launching"` and arms a 30s `setTimeout` that flips `launchingHintVisible` for the taskbar hint.
+- All `event.data` field accesses guarded with `?.` and `?? 0` — defensive against payload shape variance across plugin versions.
+- Progress render block inserted below the "available" box (only visible when `updateState === "installing" && downloadProgress`). Downloading phase: label with "X.X / Y.Y MB", progress bar (`<div>` width = `(downloaded/total)*100%`, transition 0.2s); falls back gracefully when `total === 0` (indeterminate — omits the denominator). Launching phase: copy "Installer launched — please complete it in the dialog..." + conditional 30s hint.
+- Three new style entries added (`updateProgressBox`, `updateProgressLabel`, `updateProgressTrack`, `updateProgressFill`, `updateProgressHint`). All inline; no new CSS classes, no new dependencies.
+- No version bumps (backend already did 0.1.7 → 0.1.8). No tauri.conf.json, Cargo.toml, or route changes.
+- `npx tsc --noEmit` → clean.
+**Open:** Progress bar is indeterminate when `total === 0` (Tauri plugin may not always fire `Started` with a `contentLength`). Acceptable for v0.1.8 — the label still shows bytes downloaded. Cancel-mid-update and persistent "last updated at" stamp deferred to future rounds.

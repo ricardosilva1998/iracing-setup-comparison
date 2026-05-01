@@ -92,6 +92,12 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
   const [updateState, setUpdateState] = useState<"idle" | "checking" | "uptodate" | "available" | "installing" | "failed">("idle");
   const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string | null | undefined; install: () => Promise<void> } | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    downloaded: number;
+    total: number;
+    phase: "downloading" | "launching";
+  } | null>(null);
+  const [launchingHintVisible, setLaunchingHintVisible] = useState(false);
 
   async function handleSave() {
     setBusy(true);
@@ -136,8 +142,33 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
           body: update.body,
           install: async () => {
             setUpdateState("installing");
-            await update.downloadAndInstall();
-            await relaunch();
+            setDownloadProgress({ downloaded: 0, total: 0, phase: "downloading" });
+            setLaunchingHintVisible(false);
+            try {
+              let downloaded = 0;
+              let total = 0;
+              await update.downloadAndInstall((event) => {
+                switch (event.event) {
+                  case "Started":
+                    total = event.data?.contentLength ?? 0;
+                    setDownloadProgress({ downloaded: 0, total, phase: "downloading" });
+                    break;
+                  case "Progress":
+                    downloaded += event.data?.chunkLength ?? 0;
+                    setDownloadProgress({ downloaded, total, phase: "downloading" });
+                    break;
+                  case "Finished":
+                    setDownloadProgress({ downloaded: total, total, phase: "launching" });
+                    setTimeout(() => setLaunchingHintVisible(true), 30_000);
+                    break;
+                }
+              });
+              await relaunch();
+            } catch (e) {
+              setUpdateState("failed");
+              setUpdateMessage(`Install failed: ${String(e)}`);
+              setDownloadProgress(null);
+            }
           },
         });
       } else {
@@ -248,6 +279,43 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
               <button style={styles.button} onClick={updateInfo.install}>
                 Download &amp; Install
               </button>
+            </div>
+          )}
+          {updateState === "installing" && downloadProgress && (
+            <div style={styles.updateProgressBox}>
+              {downloadProgress.phase === "downloading" ? (
+                <>
+                  <div style={styles.updateProgressLabel}>
+                    Downloading update…{" "}
+                    {downloadProgress.total > 0
+                      ? `${(downloadProgress.downloaded / (1024 * 1024)).toFixed(1)} / ${(downloadProgress.total / (1024 * 1024)).toFixed(1)} MB`
+                      : downloadProgress.downloaded > 0
+                        ? `${(downloadProgress.downloaded / (1024 * 1024)).toFixed(1)} MB`
+                        : ""}
+                  </div>
+                  <div style={styles.updateProgressTrack}>
+                    <div
+                      style={{
+                        ...styles.updateProgressFill,
+                        width: downloadProgress.total > 0
+                          ? `${Math.min(100, (downloadProgress.downloaded / downloadProgress.total) * 100).toFixed(1)}%`
+                          : "0%",
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={styles.updateProgressLabel}>
+                    Installer launched — please complete it in the dialog and the app will relaunch.
+                  </div>
+                  {launchingHintVisible && (
+                    <div style={styles.updateProgressHint}>
+                      If nothing happened, the installer may be behind another window — check your taskbar.
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1102,5 +1170,35 @@ const styles: Record<string, React.CSSProperties> = {
   folderErrorText: {
     fontSize: 12,
     color: COLOR.red,
+  },
+  updateProgressBox: {
+    backgroundColor: "#0a1628",
+    border: `1px solid #1e3a5f`,
+    borderRadius: 6,
+    padding: "0.75rem 1rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.5rem",
+  } as React.CSSProperties,
+  updateProgressLabel: {
+    fontSize: 13,
+    color: COLOR.text,
+  },
+  updateProgressTrack: {
+    height: 6,
+    backgroundColor: COLOR.border,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  updateProgressFill: {
+    height: "100%",
+    backgroundColor: COLOR.accent,
+    borderRadius: 3,
+    transition: "width 0.2s ease",
+  } as React.CSSProperties,
+  updateProgressHint: {
+    fontSize: 11,
+    color: COLOR.muted,
+    fontStyle: "italic",
   },
 };

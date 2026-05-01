@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "iRacing Setup Bridge",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "identifier": "com.iracingsetupbridge.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -47,7 +47,7 @@
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1N0NCQjVENTQ0RkJCQTMKUldTanUwOVVYYnQ4TlFUOW9lOEdtc1B5eUU0RWxZTnlHK1VpbWlJOGhpdHhmNDBNdWdBTzZYWFMK",
       "windows": {
-        "installMode": "passive"
+        "installMode": "basicUi"
       }
     }
   }
