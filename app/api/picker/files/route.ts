@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
       where: { seasonWeekId: seasonWeek.id, trackId, carId },
       select: {
         url: true,
+        externalId: true,
         shop: { select: { name: true } },
         car: { select: { name: true } },
       },
@@ -124,18 +125,21 @@ export async function GET(request: NextRequest) {
             shopName,
             shopSlug,
             datapackId: null as string | null,
+            externalId: listing.externalId ?? null,
             fileNames: [] as string[],
             cached: false,
           };
         }
 
         // GnG path — fetch (or return cached) manifest.
+        // externalId is null for GnG: its file ID is datapackId (kept for backward compat).
         try {
           const manifest = await getOrFetchManifest(datapackId);
           return {
             shopName,
             shopSlug,
             datapackId,
+            externalId: null as string | null,
             fileNames: manifest.files.map((f) => f.name),
             cached: manifest.cached,
           };
@@ -147,6 +151,7 @@ export async function GET(request: NextRequest) {
             shopName,
             shopSlug,
             datapackId,
+            externalId: null as string | null,
             fileNames: [],
             cached: false,
           };

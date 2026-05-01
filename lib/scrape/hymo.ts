@@ -306,11 +306,13 @@ export async function runHymoScrape(prisma: PrismaClient): Promise<HymoScrapeRes
               url: listingUrl,
               price: null,
               series: seriesName,
+              externalId: String(item.id),
               lastSeenAt: new Date(),
             },
             update: {
               url: listingUrl,
               series: seriesName,
+              externalId: String(item.id),
               lastSeenAt: new Date(),
             },
           });

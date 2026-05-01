@@ -93,6 +93,7 @@ model SetupListing {
   url          String
   price        Float?
   series       String?    // shop's series label, display-only metadata
+  externalId   String?    @map("external_id")  // shop's own product/listing ID (HYMO product.id, future shops TBD)
   lastSeenAt   DateTime
   lapTime      LapTime?
   createdAt    DateTime   @default(now())
