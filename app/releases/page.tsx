@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.3.0",
+    publishedAt: "2026-05-01",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.3.0_x64_en-US.msi",
+        sizeBytes: 3280896,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.3.0/iRacing.Setup.Bridge_0.3.0_x64_en-US.msi",
+      },
+    ],
+    body: "Round 30: HYMO file-download pipeline. Bulk Download tab now downloads HYMO setups alongside Grid-and-Go. Picker per-shop section also gets a Download All button for HYMO entries. Two-step API integration with auto-handled ZIP-in-ZIP delivery quirk.",
+  },
+  {
     tagName: "bridge-v0.2.1",
     publishedAt: "2026-04-30",
     assets: [
