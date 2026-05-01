@@ -755,6 +755,31 @@ Format per entry:
 - Production maxDuration 600s envelope post-bump -- needs first-deploy confirmation that `?shop=all` fits.
 - `Oval` class dropdown entry (cosmetic, MG-rooted; round 12 candidate).
 
+### 2026-05-01 13:15 — team-deployment (round 23)
+**Task:** Commit + push bridge v0.1.3 (Tauri updater, white-border fix, localeCompare guard); tag bridge-v0.1.3; wait for GitHub Actions build; verify release assets + latest.json; update /releases page; Railway deploy.
+**Commits:**
+- `c6ead86` — feat(round 23): bridge v0.1.3 — Tauri updater + white-border fix + localeCompare guard
+- `177eb40` — fix(bridge): add empty postcss.config.mjs to stop Vite walking up to repo root
+- `c4b9420` — fix(bridge): add createUpdaterArtifacts to produce .msi.zip.sig for updater
+- `10c29db` — fix(ci): bust cargo cache on tauri.conf.json change + add bundle diagnostic step
+- `433acf4` — fix(ci): use *.msi.sig pattern — Tauri v2 names sig file .msi.sig not .msi.zip.sig
+- `b48e7c2` — docs(round 23): /releases lists bridge-v0.1.3
+**Pushed to:** origin/main @ b48e7c2; tag bridge-v0.1.3 force-pushed 4 times during fix iterations
+**PR:** n/a
+**Deploy:** railway up → 81f0e535-614e-4668-ad81-be3b6fdf1941 → success (releases page only; no web app logic changed)
+**Build time:** GitHub Actions run 25215099990 — ~13 min (full Rust compile after cache bust)
+**Healthcheck:** /releases → 200; /compare → 200 (unchanged)
+**Logs after deploy (60s window):** clean — no errors, no restart cycles
+**GitHub Release:** bridge-v0.1.3 published. Assets: iRacing.Setup.Bridge_0.1.3_x64_en-US.msi (3,194,880 bytes) + latest.json (829 bytes). latest.json signature field non-empty (signing successful).
+**Build failures encountered and fixed (3 iterations):**
+1. Vite PostCSS config walk-up: created bridge-app/postcss.config.mjs (empty stub) to block root postcss.config.mjs from being found.
+2. Missing .msi.zip.sig: added bundle.createUpdaterArtifacts=true to tauri.conf.json; cache key was reusing old target so also added tauri.conf.json to the cargo cache hash.
+3. Wrong sig filename pattern: Tauri v2 produces .msi.sig (not .msi.zip.sig); fixed find pattern in workflow.
+**Open:**
+- /releases page currently showing v0.1.2 via GITHUB_TOKEN live API (ISR cache; will self-refresh within 5 min as v0.1.3 is now "Latest" on GitHub).
+- In-app updater endpoint (releases/latest/download/latest.json) requires GitHub auth since the repo is private — users will get a 404 from the updater until either (a) the repo is made public or (b) a proxy endpoint is added. Flag for team-leader / user decision next round.
+- All round-12 carry-overs unchanged.
+
 ### 2026-04-30 12:30 — team-deployment (round 11)
 **Task:** Set Railway P1DOKS_EMAIL/P1DOKS_PASSWORD secrets; commit + push round-11; trigger Railway deploy; production /api/ingest?shop=p1doks isolated test then ?shop=all; verify production /compare 5-shop layout; tail logs.
 **Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); no other code changes -- backend-dev's r11 diff already on main}
