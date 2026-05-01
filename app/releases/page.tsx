@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.2.0",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.2.0_x64_en-US.msi",
+        sizeBytes: 3300000,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.2.0/iRacing.Setup.Bridge_0.2.0_x64_en-US.msi",
+      },
+    ],
+    body: "Round 27: bulk download for an entire shop + week in one click. New Manage Folders tab to set the iRacing target folder per car (persistent across runs). New Picker 'Save for this car' button. Significant version bump (0.1.x → 0.2.0) since this is a major feature drop.",
+  },
+  {
     tagName: "bridge-v0.1.9",
     publishedAt: "2026-04-30",
     assets: [
