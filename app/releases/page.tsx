@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.1.3",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.1.3_x64_en-US.msi",
+        sizeBytes: 3194880,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.3/iRacing.Setup.Bridge_0.1.3_x64_en-US.msi",
+      },
+    ],
+    body: "Round 23: Tauri updater plugin (in-app updates from v0.1.4 onwards), dark-window background fix, localeCompare crash on Week select fixed, Check for Updates UI in Settings.",
+  },
+  {
     tagName: "bridge-v0.1.2",
     publishedAt: "2026-04-30",
     assets: [
