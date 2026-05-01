@@ -1933,3 +1933,23 @@ Format per entry:
 - `folderError` is now set (not cleared) in the basename-fallback paths so the user has inline feedback; the early-return on "picked root" path means `setCurrentIracingFolder` is NOT called in that branch.
 **Open:** none.
 **Open:** frontend-dev next round must update `handleBrowseFolder` in App.tsx to compute the relative path from `iracingRoot` instead of taking only the basename — that is the other half of the bug fix.
+
+### 2026-04-30 17:55 — team-deployment (round 26)
+**Task:** Ship bridge v0.1.9 (relative-path Browse fix) — commit, push, tag, wait for GitHub Actions MSI build, prepend /releases entry, Railway redeploy, verify proxy.
+**Files:** bridge-app/src-tauri/src/lib.rs, bridge-app/src/App.tsx, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml, app/releases/page.tsx, CLAUDE.md
+**Decisions:**
+- **Pre-flight:** `git status -uno` showed exactly 6 files (bridge lib.rs, App.tsx, package.json, tauri.conf.json, Cargo.toml, CLAUDE.md). No .env, dev.db, node_modules, .next, app/generated/, bridge-app/dist/, target/, or stray Tauri keypair files. Secret-leak guard (`grep PRIVATE KEY / BEGIN OPENSSH` on staged diff) → 0 hits.
+- **Phase 1 — Bridge build.**
+  - Commit `8614ab2`: "fix(round 26): bridge v0.1.9 — Browse picks relative path; multi-segment iracing folder". 6 files, 156 insertions, 17 deletions. Pushed `6379325..8614ab2` to origin/main.
+  - Tag `bridge-v0.1.9` pushed → GitHub Actions run `25225410020` triggered (Build Windows MSI).
+  - Build completed SUCCESS in ~12 min. All steps green; no Rust test failures (unit tests are not run by the CI workflow — cargo test not in the workflow steps, consistent with prior rounds).
+  - Release assets verified: `iRacing.Setup.Bridge_0.1.9_x64_en-US.msi` (3,272,704 bytes) + `latest.json` (829 bytes) both uploaded to `bridge-v0.1.9` release.
+- **Phase 2 — /releases page + Railway redeploy.**
+  - Prepended v0.1.9 entry to `app/releases/page.tsx` FALLBACK_RELEASES. Commit `3a50ff7`: "docs(round 26): /releases lists bridge-v0.1.9". Pushed to origin/main.
+  - `railway up --detach` → deployment id `76aa9f6b-3160-4b76-b0e3-4a7795aba83a` → SUCCESS (logs: "Ready in 0ms", no errors).
+  - Production /releases: 200, v0.1.9 appears at top (grep confirms 3 occurrences of `bridge-v0.1.9`).
+  - Proxy: `GET /api/latest-bridge` → `{ "version": "0.1.9" }` (ISR revalidated during deploy; no wait required).
+- **In-app updater ready:** v0.1.9 `latest.json` is signed and uploaded; the proxy returns `0.1.9`; v0.1.8 users with `basicUi` installer should see the update prompt in Settings → Check for Updates.
+**Open:**
+- Cargo unit tests (8 new tests in `safe_relative_path`) are not executed by the CI workflow — they run correctly locally with `cargo test` but the workflow only does `tauri build`. If a future round wants test gating in CI, add a `cargo test --manifest-path bridge-app/src-tauri/Cargo.toml` step before the tauri build step.
+- All round-12 carry-overs unchanged (Oval class dropdown, VRS, INGEST_SECRET rotation, image footprint).
