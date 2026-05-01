@@ -1778,3 +1778,13 @@ Format per entry:
 - 10 cars without confirmed folder mappings (Ford GT GTE, Lexus RC F GT3, KTM X-BOW GT2, Ginetta G55 GT4, FIA F4, Ray FF1600, Skip Barber, O'Reilly chassis, NASCAR Cup, NASCAR Truck) fall back to editable user input — the amber warning box in the bridge UI handles this gracefully.
 - Persistence of user-edited folder overrides across sessions (future round if it becomes painful).
 - All round-12 backlog items unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
+
+### 2026-04-30 HH:MM — backend-dev (round 24-fix)
+**Task:** Fix Tauri v2 ACL error "command plugin:updater|check not allowed by ACL" by creating the missing capabilities config and bumping version to 0.1.6.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/bridge-app/src-tauri/capabilities/default.json (new), bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml
+**Decisions:**
+- Root cause: round 23 added `tauri-plugin-updater` + `tauri-plugin-process` to Cargo.toml and lib.rs but never created a `capabilities/` directory. Without any capability file, Tauri v2 denies all plugin commands by default.
+- Created `src-tauri/capabilities/default.json` with `"windows": ["main"]` and explicit individual permissions `updater:allow-check`, `updater:allow-download-and-install`, `process:allow-relaunch` (used individual form rather than `<plugin>:default` because the npm plugin packages ship no `permissions/` directory to confirm the `default` bundle exists; individual forms match the exact command names from the error message).
+- Bumped version 0.1.5 -> 0.1.6 in all three version sources (package.json, tauri.conf.json, Cargo.toml). Users on v0.1.5 will install v0.1.6 manually once; from v0.1.6 onward the in-app updater button will work.
+- `npx tsc --noEmit` green; JSON validity confirmed via python3.
+**Open:** team-deployment must build + tag v0.1.6 MSI + publish the GitHub release so the update is offered to v0.1.5 users. The `$schema` path (`../gen/schemas/desktop-schema.json`) is generated at first `tauri build` and is only a linting aid — the JSON is structurally valid without it resolving.

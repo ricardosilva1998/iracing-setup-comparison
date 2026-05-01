@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for iRacing Setup Bridge — grants core, updater, and process permissions.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:allow-relaunch"
+  ]
+}
