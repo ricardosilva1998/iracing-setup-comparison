@@ -2045,3 +2045,25 @@ Format per entry:
 - No TS, no Rust, no tauri.conf.json, no workflow files touched.
 - `npx tsc --noEmit` (bridge-app) → green.
 **Open:** none.
+
+### 2026-05-01 20:09 — team-deployment (round 27-fix)
+**Task:** Ship bridge v0.2.1 — workflow URL spaces→dots fix + Manage Folders scroll fix.
+**Commits:** `fd51a5e` — "fix(round 27): bridge v0.2.1 — workflow URL spaces→dots + Manage Folders scroll", `3cf1af4` — "docs(round 27-fix): /releases lists bridge-v0.2.1"
+**Pushed to:** origin/main @ 3cf1af4
+**PR:** n/a
+**Deploy:** railway up → 86243745-0300-4598-baa8-2172e72a961f → success
+**Build time:** ~20s (web-only; bridge MSI built by GitHub Actions run 25230466278 in ~3m30s)
+**Healthcheck:** pass (200 OK on / and /releases)
+**Logs after deploy (60s window):** clean — volume mount → Starting Container → Next.js 16.2.4 → Ready in 0ms. No errors.
+**Phase 1 — Bridge build:**
+- Pre-flight: git status clean (6 files only); secret-leak scan 0 hits; no `.env`, `dev.db`, `node_modules`, or Tauri keypair files staged.
+- Committed `fd51a5e` (6 files: `.github/workflows/bridge-build.yml`, `bridge-app/index.html`, `bridge-app/package.json`, `bridge-app/src-tauri/Cargo.toml`, `bridge-app/src-tauri/tauri.conf.json`, `CLAUDE.md`). Pushed origin/main. Tagged `bridge-v0.2.1`, pushed tag.
+- GitHub Actions run `25230466278` → completed / success. Build wallclock ~3m30s.
+- `latest.json` manifest URL verified: ends with `iRacing.Setup.Bridge_0.2.1_x64_en-US.msi` (DOTS, not spaces). This is the fix — v0.2.0's manifest had spaces, causing 404s in the in-app updater.
+- GitHub release `bridge-v0.2.1` published with assets: `iRacing.Setup.Bridge_0.2.1_x64_en-US.msi` + `latest.json`.
+- `/api/latest-bridge` → `"0.2.1"` (confirmed post Phase 2 deploy). Asset proxy `/api/bridge-asset/iRacing.Setup.Bridge_0.2.1_x64_en-US.msi` → 200, `Content-Type: application/octet-stream`.
+**Phase 2 — /releases page:**
+- Prepended v0.2.1 entry to `FALLBACK_RELEASES` in `app/releases/page.tsx`. Committed `3cf1af4`. Pushed. Railway deploy `86243745` → SUCCESS. `/releases` → 200 with v0.2.1 visible (via live GitHub API path since GITHUB_TOKEN is set).
+**Open:**
+- v0.2.0 → v0.2.1 in-app update is the first fully-clean path: proxy is live, manifest URL uses dots, binary is accessible. User should try Settings → Check for Updates in v0.2.0.
+- Round 28 backlog unchanged: Bulk Download pipelines for HYMO/GO/MG/P1Doks; Mobile UI; Oval class cleanup; VRS decision; INGEST_SECRET rotation; image footprint.
