@@ -2011,3 +2011,16 @@ Format per entry:
 - **No version bump** — backend already bumped to 0.2.0.
 - **`npx tsc --noEmit`** → clean. **`npm run lint`** (repo root, `tsc --noEmit`) → clean.
 **Open:** Bulk Download only works end-to-end for Grid-and-Go today (only shop with `datapackId` populated). HYMO/GO/MG/P1Doks will log "Shop has no file pipeline" until their download pipelines are implemented in a future backend round. team-deployment to tag + build bridge-v0.2.0 MSI in next round.
+
+### 2026-04-30 20:39 — team-deployment (round 27)
+**Task:** Ship bridge v0.2.0 — Phase 1 (web/Railway), Phase 2 (bridge build via GitHub Actions), Phase 3 (/releases page update).
+**Files:** `app/api/picker/all-cars/route.ts`, `bridge-app/src/{App.tsx,styles.ts,types.ts,helpers.ts,screens/{Settings,Picker,Bulk,Manage}.tsx}`, `bridge-app/src-tauri/{src/lib.rs,Cargo.toml,tauri.conf.json}`, `bridge-app/package.json`, `app/releases/page.tsx`, `CLAUDE.md`
+**Decisions:**
+- **Phase 1 — Web + Railway deploy.** Commit `19512ed` (14 files, 2206 ins / 1130 del). Pushed `7801678..19512ed` to origin/main. Railway deploy id `ad8401b0-6f5b-43bc-a92c-86de09b40a22` → SUCCESS. Verified: `/api/picker/all-cars` → 118 cars (DB grew from 113 since QA count; `porsche9922cup` confirmed present). All regression routes passed: `/` 200, `/week/3/track/28?carClass=GT3` 200, `/week/3/track/28/car/3?carClass=GT3` 200, `/releases` 200, `/api/latest-bridge` 200, `/admin` 401, `/api/ingest` 405. No `.env`, `dev.db`, `node_modules`, or Tauri keypair files staged.
+- **Phase 2 — Bridge build.** Tagged `bridge-v0.2.0`, pushed to origin. GitHub Actions run `25229254688` → completed / success (15m wallclock; Rust cross-compile + Tauri MSI bundle). Release assets: `iRacing.Setup.Bridge_0.2.0_x64_en-US.msi` (3,280,896 bytes) + `latest.json`. MSI proxy at `/api/bridge-asset/iRacing.Setup.Bridge_0.2.0_x64_en-US.msi` → 200, OLE2 magic `D0CF` confirmed. `/api/latest-bridge` → `"0.2.0"` (after ISR refresh on Phase 3 deploy).
+- **Phase 3 — /releases page.** Prepended v0.2.0 entry to `FALLBACK_RELEASES`. Commit `3bb4555`. Railway deploy id `cd6de11f-e980-4960-9ff9-205633a4deb1` → SUCCESS. `/releases` confirmed `bridge-v0.2.0` visible at top of page.
+- **Secret leak scan:** `git diff | grep -i "PRIVATE KEY\|BEGIN OPENSSH\|untrusted comment"` → 0 hits across all commits. No GitHub secrets re-set (pre-positioned from prior rounds).
+**Open:**
+- In-app updater (v0.1.9 → v0.2.0): `/api/latest-bridge` now reports 0.2.0; `latest.json` is on the release. Updater should prompt on next app launch for 0.1.9 users.
+- Bulk Download pipelines for HYMO/GO Setups/Majors Garage/P1Doks: each logs "Shop has no file pipeline" today — round 28 candidate.
+- Round 11 carry-overs (Mobile UI, `Oval` class cleanup, VRS, INGEST_SECRET rotation, image footprint) unchanged.
