@@ -426,12 +426,35 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
       multiple: false,
       defaultPath: settings.iracingRoot || undefined,
     });
-    if (typeof picked === "string" && picked.length > 0) {
-      const segments = picked.split(/[\\/]/).filter(Boolean);
-      const basename = segments[segments.length - 1] ?? picked;
-      setCurrentIracingFolder(basename);
+    if (typeof picked !== "string" || picked.length === 0) return;
+
+    // Normalise separators on both sides so mixed-separator paths compare correctly.
+    const pickedNorm = picked.replace(/\\/g, "/");
+    const root = (settings.iracingRoot ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
+
+    let folder: string;
+
+    if (!root) {
+      // iracingRoot not configured: fall back to basename and hint the user.
+      const segments = pickedNorm.split("/").filter(Boolean);
+      folder = segments[segments.length - 1] ?? pickedNorm;
+      setFolderError("Set iRacing Setups Root in Settings to enable multi-segment paths.");
+    } else if (pickedNorm === root) {
+      // User picked the root itself — not useful as a car folder.
+      setFolderError("Pick a subfolder of the iRacing setups root, not the root itself.");
+      return;
+    } else if (pickedNorm.startsWith(root + "/")) {
+      // Inside the root: compute the relative path.
+      folder = pickedNorm.slice(root.length + 1);
       setFolderError(null);
+    } else {
+      // Outside the root: fall back to basename and surface a hint.
+      const segments = pickedNorm.split("/").filter(Boolean);
+      folder = segments[segments.length - 1] ?? pickedNorm;
+      setFolderError("Folder is outside iRacing Setups Root — using basename only.");
     }
+
+    setCurrentIracingFolder(folder);
   }
 
   async function handleDownload(shopFile: ShopFiles, carName: string, trackName: string) {

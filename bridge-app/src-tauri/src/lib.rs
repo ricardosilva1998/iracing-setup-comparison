@@ -102,17 +102,110 @@ fn safe_segment(s: &str) -> anyhow::Result<String> {
     Ok(slug)
 }
 
-/// Validate a verbatim iRacing folder name (e.g. "porsche9922cup", "mx5 mx52016").
-/// Preserves spaces, dots, hyphens, and underscores — all of which appear in real
-/// iRacing folder names. Rejects path separators and ".." to prevent traversal.
-fn safe_folder_name(s: &str) -> anyhow::Result<String> {
-    if s.is_empty() {
-        anyhow::bail!("iracing folder name is empty");
+/// Validate a relative path that may contain multiple segments separated by `/` or `\`
+/// (e.g. "porsche9922cup", "porsche9922cup/myfolder", "mx5 mx52016/my folder").
+/// Each segment is trimmed and validated: non-empty, not `.`, not `..`, no `:` (blocks
+/// Windows drive letters). Segments are rejoined with the platform separator.
+/// Rejects absolute paths, drive-letter prefixes, and any traversal-enabling segment.
+fn safe_relative_path(s: &str) -> anyhow::Result<String> {
+    if s.trim().is_empty() {
+        anyhow::bail!("empty folder path");
     }
-    if s.contains("..") || s.contains('/') || s.contains('\\') {
-        anyhow::bail!("invalid iracing folder name (path traversal): {:?}", s);
+    // Reject absolute paths (POSIX / or Windows \)
+    if s.starts_with('/') || s.starts_with('\\') {
+        anyhow::bail!("absolute path not allowed: {:?}", s);
     }
-    Ok(s.to_string())
+    // Reject Windows drive letter prefixes (e.g. "C:\", "C:/")
+    if s.len() >= 2 && s.chars().nth(1) == Some(':') {
+        anyhow::bail!("absolute path not allowed: {:?}", s);
+    }
+
+    let segments: Vec<&str> = s
+        .split(|c| c == '/' || c == '\\')
+        .filter(|seg| !seg.is_empty())
+        .collect();
+
+    if segments.is_empty() {
+        anyhow::bail!("empty folder path after splitting");
+    }
+
+    for seg in &segments {
+        let trimmed = seg.trim();
+        if trimmed.is_empty() {
+            anyhow::bail!("invalid path segment (blank): {:?}", seg);
+        }
+        if trimmed == "." || trimmed == ".." {
+            anyhow::bail!("invalid path segment (traversal): {:?}", seg);
+        }
+        if trimmed.contains(':') {
+            anyhow::bail!("invalid path segment (colon): {:?}", seg);
+        }
+        // Defensive: split already stripped separators, but guard explicitly.
+        if trimmed.contains('/') || trimmed.contains('\\') {
+            anyhow::bail!("invalid path segment (contains separator): {:?}", seg);
+        }
+    }
+
+    let joined = segments
+        .iter()
+        .map(|s| s.trim())
+        .collect::<Vec<_>>()
+        .join(std::path::MAIN_SEPARATOR_STR);
+
+    Ok(joined)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_relative_path;
+
+    #[test]
+    fn single_segment_accepted() {
+        assert_eq!(safe_relative_path("porsche9922cup").unwrap(), "porsche9922cup");
+    }
+
+    #[test]
+    fn multi_segment_accepted() {
+        let result = safe_relative_path("porsche9922cup/myfolder").unwrap();
+        assert!(result.contains("porsche9922cup"));
+        assert!(result.contains("myfolder"));
+        assert!(!result.contains(".."));
+    }
+
+    #[test]
+    fn dotdot_rejected() {
+        assert!(safe_relative_path("../foo").is_err());
+        assert!(safe_relative_path("foo/../bar").is_err());
+    }
+
+    #[test]
+    fn absolute_posix_rejected() {
+        assert!(safe_relative_path("/absolute/path").is_err());
+    }
+
+    #[test]
+    fn windows_drive_rejected() {
+        assert!(safe_relative_path("C:\\foo").is_err());
+        assert!(safe_relative_path("C:/foo").is_err());
+    }
+
+    #[test]
+    fn empty_rejected() {
+        assert!(safe_relative_path("").is_err());
+        assert!(safe_relative_path("   ").is_err());
+    }
+
+    #[test]
+    fn dot_segment_rejected() {
+        assert!(safe_relative_path("./foo").is_err());
+    }
+
+    #[test]
+    fn spaces_in_segments_preserved() {
+        let result = safe_relative_path("mx5 mx52016/my folder").unwrap();
+        assert!(result.contains("mx5 mx52016"));
+        assert!(result.contains("my folder"));
+    }
 }
 
 /// Load password for the fixed "admin" account from the OS keychain.
@@ -267,7 +360,7 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
     // v0.1.4 callers that omit iracing_folder_name continue to work unchanged.
     let car_folder = match args.iracing_folder_name.as_deref() {
         Some(name) if !name.trim().is_empty() => {
-            safe_folder_name(name.trim()).map_err(|e| e.to_string())?
+            safe_relative_path(name.trim()).map_err(|e| e.to_string())?
         }
         _ => safe_segment(&args.car_slug).map_err(|e| e.to_string())?,
     };

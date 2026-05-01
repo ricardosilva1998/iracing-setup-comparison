@@ -1910,3 +1910,26 @@ Format per entry:
 - User is currently mid-failed-update on v0.1.6. They must manually install v0.1.8 from the MSI URL (force-quit the bridge first if still running). From v0.1.8 onwards in-app updates show the visible installer + progress.
 - Progress bar is indeterminate when `contentLength` is 0 (Tauri `Started` event may not always carry this). Deferred to future round.
 - Cancel-mid-update and "last updated at" stamp deferred.
+
+### 2026-04-30 — backend-dev (round 26)
+**Task:** Replace `safe_folder_name()` with `safe_relative_path()` in lib.rs so multi-segment iRacing folder paths (e.g. `porsche9922cup/myfolder`) are accepted; bump version to 0.1.9.
+**Files:** `bridge-app/src-tauri/src/lib.rs`, `bridge-app/package.json`, `bridge-app/src-tauri/tauri.conf.json`, `bridge-app/src-tauri/Cargo.toml`
+**Decisions:**
+- `safe_folder_name()` replaced by `safe_relative_path(s)`: splits input on `/` or `\`, validates each trimmed segment (non-empty, not `.`, not `..`, no `:`), rejects absolute paths and Windows drive letters up front, rejoins with `std::path::MAIN_SEPARATOR_STR`. Accepts `"porsche9922cup"`, `"porsche9922cup/myfolder"`, `"mx5 mx52016/my folder"`. Rejects `".."`, `"../foo"`, `"/abs"`, `"C:\\foo"`, empty.
+- Call site in `download_setups` updated from `safe_folder_name(name.trim())` to `safe_relative_path(name.trim())` — one-line change; `DownloadArgs` struct and Tauri command signature unchanged.
+- Path construction confirmed to use `PathBuf::from(&file.iracing_root).join(&car_folder).join(...)` chain throughout — `Path::join` on a relative multi-segment string works correctly on both platforms without additional changes.
+- 8 `#[cfg(test)]` unit tests added covering: single segment, multi-segment, `..` rejection, absolute POSIX rejection, Windows drive rejection, empty/blank rejection, `.` segment rejection, spaces in segments.
+- Version bumped 0.1.8 → 0.1.9 in all three manifests (package.json, tauri.conf.json, Cargo.toml).
+- `npx tsc --noEmit` → clean. `cargo check` not run (no Rust toolchain on Mac; GitHub Actions build is the gate).
+
+### 2026-04-30 — frontend-dev (round 26)
+**Task:** Fix `handleBrowseFolder` in App.tsx to compute multi-segment relative path from iracingRoot instead of always taking basename.
+**Files:** bridge-app/src/App.tsx
+**Decisions:**
+- Replaced the three-line basename-only extraction with a four-branch strategy: (1) no root configured → basename + inline `folderError` hint to set root in Settings; (2) user picked root itself → error "Pick a subfolder …, not the root itself", return early (no state change); (3) picked path starts with `root + "/"` → slice off root prefix + separator to get the relative path, clear folderError; (4) picked path outside root → basename fallback + folderError hint.
+- Separator normalisation applied to both `picked` and `settings.iracingRoot` via `.replace(/\\/g, "/")` before prefix comparison, so Windows `\\`-separated roots compare correctly against `/`-normalised pick results and vice versa.
+- Resulting `folder` is stored with forward-slash separators (already achieved by the normalisation step); the Rust `safe_relative_path()` accepts both separators so this is cosmetic only.
+- The path-preview hint `Files will be saved to <root>/{currentIracingFolder}/…` renders correctly for multi-segment values (plain string interpolation in JSX, no code change needed).
+- `folderError` is now set (not cleared) in the basename-fallback paths so the user has inline feedback; the early-return on "picked root" path means `setCurrentIracingFolder` is NOT called in that branch.
+**Open:** none.
+**Open:** frontend-dev next round must update `handleBrowseFolder` in App.tsx to compute the relative path from `iracingRoot` instead of taking only the basename — that is the other half of the bug fix.

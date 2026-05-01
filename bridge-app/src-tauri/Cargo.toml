@@ -1,6 +1,6 @@
 [package]
 name = "iracing-setup-bridge"
-version = "0.1.8"
+version = "0.1.9"
 description = "iRacing Setup Bridge — desktop app to download setups from the comparison site"
 authors = ["Ricardo Silva"]
 edition = "2021"
