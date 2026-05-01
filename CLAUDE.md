@@ -1964,3 +1964,24 @@ Format per entry:
 - **Deliverable C (hot-fix v0.1.9):** downloaded `latest.json` from `bridge-v0.1.9`, patched `.platforms["windows-x86_64"].url` with `jq` (signature untouched), re-uploaded with `gh release upload --clobber`. `/api/latest-bridge` now returns the proxy URL after ISR cache expiry (confirmed live: `"url": "https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/iRacing Setup Bridge_0.1.9_x64_en-US.msi"`).
 - `npm run lint` (tsc --noEmit) → green. `npm run build` → green; `/api/bridge-asset/[filename]` (dynamic ƒ) in route table. YAML validation → green.
 **Open:** team-deployment must redeploy Railway so the new route goes live before the user triggers the in-app updater. The manifest is already patched; the route just needs to be deployed.
+
+### 2026-04-30 19:40 — team-deployment (round 26-fix)
+**Task:** Commit + push the bridge-asset proxy route + workflow fix; redeploy Railway; verify the MSI proxy returns correct OLE bytes; run regression checks.
+**Commits:** `eb2bd7d` — "fix(round 26): proxy bridge MSI binaries through server (private-repo workaround)"
+**Pushed to:** origin/main @ eb2bd7d
+**PR:** n/a
+**Deploy:** railway up → ccbfdcd6-d0a1-4888-8f9d-c34a13545896 → success
+**Build time:** ~6m (Chromium apk layer cached; only route addition)
+**Healthcheck:** pass (200 OK on /)
+**Logs after deploy (60s window):** clean — volume mount → Starting Container → Next.js 16.2.4 → Ready in 0ms. No `[bridge-asset]` errors.
+**Pre-flight:**
+- Staged exactly 3 files: `app/api/bridge-asset/[filename]/route.ts` (new, 156 L), `.github/workflows/bridge-build.yml` (1 line changed), `CLAUDE.md`. No `.env`, `dev.db`, `node_modules`, `.next` in staged set.
+- Secret-leak scan: staged diff contains `process.env.GITHUB_TOKEN` (env var reference, not a literal value). No raw secrets. PASS.
+**Binary proxy verification:**
+- `HEAD /api/bridge-asset/iRacing.Setup.Bridge_0.1.9_x64_en-US.msi` → HTTP 200, `Content-Type: application/octet-stream`, `Content-Disposition: attachment; filename="..."`, `Cache-Control: public, max-age=3600`, CORS `*`. PASS.
+- First 4 bytes: `D0 CF 11 E0` — correct OLE compound document magic for a valid MSI. The proxy is streaming the real binary, not HTML/JSON. PASS.
+- `/api/latest-bridge` → `version: "0.1.9"`, `url: "https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/iRacing Setup Bridge_0.1.9_x64_en-US.msi"`. PASS.
+- `/api/bridge-asset/nonexistent.msi` → 404. PASS.
+- `/api/bridge-asset/..%2F..%2Fetc%2Fpasswd` → 400 (path-traversal rejected by regex). PASS.
+**Regression checks:** / → 200, /week/3/track/28?carClass=GT3 → 200, /admin no auth → 401, /admin with creds → 200, /api/ingest GET → 405, /api/ingest POST no bearer → 401, /api/latest-bridge version=0.1.9, /api/picker/cars → 200, /releases → 200. All pass.
+**Open:** The v0.1.8 → v0.1.9 in-app update path is now live. User should open Settings → Check for Updates in the v0.1.8 bridge app. If it still fails, capture the exact error from the Tauri updater log and report back.
