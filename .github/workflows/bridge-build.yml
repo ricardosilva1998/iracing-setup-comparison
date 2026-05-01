@@ -72,7 +72,8 @@ jobs:
         shell: bash
         run: |
           MSI=$(find bridge-app/src-tauri/target/release/bundle/msi -name "*.msi" | head -1)
-          SIG=$(find bridge-app/src-tauri/target/release/bundle/msi -name "*.msi.zip.sig" | head -1)
+          # Tauri v2 with createUpdaterArtifacts produces .msi.sig (not the v1 .msi.zip.sig)
+          SIG=$(find bridge-app/src-tauri/target/release/bundle/msi -name "*.msi.sig" | head -1)
           echo "msi=$MSI" >> "$GITHUB_OUTPUT"
           echo "sig=$SIG" >> "$GITHUB_OUTPUT"
           echo "Found MSI: $MSI"
