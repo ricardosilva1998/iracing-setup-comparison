@@ -1788,3 +1788,30 @@ Format per entry:
 - Bumped version 0.1.5 -> 0.1.6 in all three version sources (package.json, tauri.conf.json, Cargo.toml). Users on v0.1.5 will install v0.1.6 manually once; from v0.1.6 onward the in-app updater button will work.
 - `npx tsc --noEmit` green; JSON validity confirmed via python3.
 **Open:** team-deployment must build + tag v0.1.6 MSI + publish the GitHub release so the update is offered to v0.1.5 users. The `$schema` path (`../gen/schemas/desktop-schema.json`) is generated at first `tauri build` and is only a linting aid — the JSON is structurally valid without it resolving.
+
+### 2026-05-01 15:30 — team-deployment (round 24-fix)
+**Task:** Commit + push bridge v0.1.6 (capabilities ACL fix); tag bridge-v0.1.6; GitHub Actions MSI build; /releases page update + Railway redeploy.
+**Commits:**
+- `576c9c7` — "fix(round 24): bridge v0.1.6 — Tauri v2 capability grants for updater + process" (5 files: new capabilities/default.json, modified bridge-app package.json/tauri.conf.json/Cargo.toml, CLAUDE.md)
+- `c088586` — "fix(round 24-fix): correct ACL permission name process:allow-restart" (1 file: capabilities/default.json — `process:allow-relaunch` → `process:allow-restart`; the Tauri v2 ACL validator rejected the original name and enumerated valid names in the build error; `process:allow-restart` is the correct permission for the JS `relaunch()` call)
+- `26dac14` — "docs(round 24-fix): /releases lists bridge-v0.1.6" (1 file: app/releases/page.tsx)
+**Pushed to:** origin/main @ 26dac14
+**PR:** n/a
+**Phase 1 (bridge tag + GitHub Actions):**
+- First tag push (bridge-v0.1.6 @ 576c9c7): GitHub Actions run `25219345446` → FAILURE in ~7 min. Error: `Permission process:allow-relaunch not found`. The Tauri v2 ACL validator printed the full list of valid process permissions; correct name is `process:allow-restart`. `updater:allow-check` and `updater:allow-download-and-install` were both valid and accepted.
+- Fix committed (`c088586`), main pushed, old bridge-v0.1.6 tag deleted, re-created at `c088586`, pushed.
+- Second tag push (bridge-v0.1.6 @ c088586): GitHub Actions run `25219676974` → SUCCESS in ~14 min.
+- Release `bridge-v0.1.6` assets: `iRacing.Setup.Bridge_0.1.6_x64_en-US.msi` (3,207,168 bytes, sha256 `f3f2aa9deeb87f6cb79eb4be128902c0fcb022bdd82d293621b9cfdb534f586e`) + `latest.json` (829 bytes).
+- `/api/latest-bridge` proxy confirmed `version: "0.1.6"` after ISR cache refresh.
+**Phase 2 (/releases page + Railway):**
+- Prepended v0.1.6 entry to FALLBACK_RELEASES in app/releases/page.tsx (sizeBytes=3207168, exact build size).
+- Railway deploy: deployment `30f2a8e3-5b6e-40ee-9fe4-7414ce3944fc` → SUCCESS.
+- Production `/releases` smoke: 200, `bridge-v0.1.6` confirmed in HTML.
+**Deploy:** railway up → 30f2a8e3 → success
+**Build time:** GitHub Actions ~14 min; Railway ~75s
+**Healthcheck:** pass (200 on /, /releases, /api/latest-bridge returning version: "0.1.6")
+**Logs after deploy (60s window):** clean — no errors, no restart cycles
+**Open:**
+- v0.1.5 → v0.1.6 is a **manual install** — v0.1.5's updater button is the very thing being fixed; it cannot self-update to v0.1.6. Users on v0.1.5 must download the MSI manually from the /releases page or the GitHub release. From v0.1.6 onwards the in-app Check for Updates button should work for all future versions.
+- The Tauri ACL validator error message was highly informative — it listed all valid permission identifiers. This is the canonical source of truth for future capability configs.
+- All round-12 backlog items unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
