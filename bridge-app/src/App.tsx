@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { useEffect, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -18,8 +20,8 @@ interface Week {
 }
 
 interface Track {
-  trackId: number;
-  trackName: string;
+  id: number;
+  name: string;
   setupCount: number;
 }
 
@@ -85,6 +87,9 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [updateState, setUpdateState] = useState<"idle" | "checking" | "uptodate" | "available" | "installing" | "failed">("idle");
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string | null | undefined; install: () => Promise<void> } | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   async function handleSave() {
     setBusy(true);
@@ -102,6 +107,33 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
       setStatus({ ok: false, message: String(err) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleCheckForUpdates() {
+    setUpdateState("checking");
+    setUpdateMessage(null);
+    setUpdateInfo(null);
+    try {
+      const update = await checkUpdate();
+      if (update) {
+        setUpdateState("available");
+        setUpdateInfo({
+          version: update.version,
+          body: update.body,
+          install: async () => {
+            setUpdateState("installing");
+            await update.downloadAndInstall();
+            await relaunch();
+          },
+        });
+      } else {
+        setUpdateState("uptodate");
+        setUpdateMessage("You're on the latest version.");
+      }
+    } catch (e) {
+      setUpdateState("failed");
+      setUpdateMessage(`Update check failed: ${String(e)}`);
     }
   }
 
@@ -165,6 +197,42 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
         >
           {busy ? "Testing..." : "Save & Test Connection"}
         </button>
+
+        <div style={styles.updateSection}>
+          <div style={styles.updateDivider} />
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button
+              style={updateState === "checking" || updateState === "installing" ? styles.buttonDisabled : styles.buttonSecondary}
+              onClick={handleCheckForUpdates}
+              disabled={updateState === "checking" || updateState === "installing"}
+            >
+              {updateState === "checking"
+                ? "Checking…"
+                : updateState === "installing"
+                  ? "Installing…"
+                  : "Check for Updates"}
+            </button>
+            {updateState === "uptodate" && (
+              <span style={styles.updateMsgOk}>{updateMessage}</span>
+            )}
+            {updateState === "failed" && (
+              <span style={styles.updateMsgError}>{updateMessage}</span>
+            )}
+          </div>
+          {updateState === "available" && updateInfo && (
+            <div style={styles.updateAvailableBox}>
+              <div style={styles.updateAvailableTitle}>
+                Update available: v{updateInfo.version}
+              </div>
+              {updateInfo.body && (
+                <div style={styles.updateNotes}>{updateInfo.body}</div>
+              )}
+              <button style={styles.button} onClick={updateInfo.install}>
+                Download &amp; Install
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -208,10 +276,13 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
     }
     invoke<{ tracks: Track[] }>("fetch_picker", { endpoint: `tracks?weekNum=${weekNum}` })
       .then((data) => {
-        const sorted = [...data.tracks].sort((a, b) => {
-          if (b.setupCount > 0 && a.setupCount === 0) return 1;
-          if (a.setupCount > 0 && b.setupCount === 0) return -1;
-          return a.trackName.localeCompare(b.trackName);
+        const rows = Array.isArray(data.tracks) ? data.tracks : [];
+        const sorted = [...rows].sort((a, b) => {
+          const ac = a.setupCount ?? 0;
+          const bc = b.setupCount ?? 0;
+          if (bc > 0 && ac === 0) return 1;
+          if (ac > 0 && bc === 0) return -1;
+          return (a.name ?? "").localeCompare(b.name ?? "");
         });
         setTracks(sorted);
         setTrackId(null);
@@ -284,7 +355,7 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
   }
 
   const selectedCar = cars.find((c) => c.carId === carId);
-  const selectedTrack = tracks.find((t) => t.trackId === trackId);
+  const selectedTrack = tracks.find((t) => t.id === trackId);
 
   return (
     <div style={styles.screen}>
@@ -347,8 +418,8 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
           >
             <option value="">Select track…</option>
             {tracks.map((t) => (
-              <option key={t.trackId} value={t.trackId}>
-                {t.trackName} ({t.setupCount} setups)
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.setupCount ?? 0} setups)
               </option>
             ))}
           </select>
@@ -409,7 +480,7 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
                       }
                       onClick={() =>
                         dlState === "idle" &&
-                        handleDownload(sf, selectedCar.carName, selectedTrack.trackName)
+                        handleDownload(sf, selectedCar.carName, selectedTrack.name)
                       }
                       disabled={dlState === "downloading" || dlState === "done"}
                     >
@@ -458,6 +529,17 @@ export default function App() {
   const [screen, setScreen] = useState<Screen | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const [updateBanner, setUpdateBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkUpdate()
+      .then((update) => {
+        if (update) setUpdateBanner(`Update available: v${update.version} — go to Settings to install.`);
+      })
+      .catch(() => {
+        // Silently ignore startup update-check failures (no network, unsigned build, etc.)
+      });
+  }, []);
 
   useEffect(() => {
     invoke<Settings>("get_settings")
@@ -486,6 +568,12 @@ export default function App() {
         {initError && (
           <ErrorBanner message={initError} onClose={() => setInitError(null)} />
         )}
+        {updateBanner && (
+          <div style={styles.updateBannerBar}>
+            <span style={{ flex: 1 }}>{updateBanner}</span>
+            <button onClick={() => setUpdateBanner(null)} style={styles.errorClose} aria-label="Dismiss">×</button>
+          </div>
+        )}
         <SettingsScreen
           initial={settings}
           onSuccess={(s) => {
@@ -499,6 +587,12 @@ export default function App() {
 
   return (
     <div style={styles.app}>
+      {updateBanner && (
+        <div style={styles.updateBannerBar}>
+          <span style={{ flex: 1 }}>{updateBanner}</span>
+          <button onClick={() => setUpdateBanner(null)} style={styles.errorClose} aria-label="Dismiss">×</button>
+        </div>
+      )}
       <PickerScreen
         settings={settings}
         onOpenSettings={() => setScreen("settings")}
@@ -817,4 +911,68 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 0,
     textDecoration: "underline",
   },
+  buttonSecondary: {
+    backgroundColor: COLOR.surface,
+    color: COLOR.text,
+    border: `1px solid ${COLOR.border}`,
+    borderRadius: 6,
+    padding: "0.6rem 1.25rem",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    alignSelf: "flex-start",
+  },
+  updateSection: {
+    marginTop: "0.5rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+  } as React.CSSProperties,
+  updateDivider: {
+    height: 1,
+    backgroundColor: COLOR.border,
+    marginBottom: "0.25rem",
+  },
+  updateAvailableBox: {
+    backgroundColor: "#1c1400",
+    border: `1px solid #78350f`,
+    borderRadius: 6,
+    padding: "0.75rem 1rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.5rem",
+  } as React.CSSProperties,
+  updateAvailableTitle: {
+    fontWeight: 600,
+    color: COLOR.yellow,
+    fontSize: 14,
+  },
+  updateNotes: {
+    color: COLOR.muted,
+    fontSize: 12,
+    whiteSpace: "pre-wrap",
+    maxHeight: 120,
+    overflowY: "auto",
+  } as React.CSSProperties,
+  updateMsgOk: {
+    fontSize: 13,
+    color: COLOR.green,
+  },
+  updateMsgError: {
+    fontSize: 13,
+    color: COLOR.red,
+  },
+  updateBannerBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    backgroundColor: "#1c1400",
+    border: `1px solid #78350f`,
+    color: COLOR.yellow,
+    padding: "0.5rem 1rem",
+    fontSize: 13,
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+  } as React.CSSProperties,
 };

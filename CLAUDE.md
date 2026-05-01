@@ -1609,6 +1609,23 @@ Format per entry:
 - `/releases` route remains `○ (Static)` in the build (fallback path prerendered). Lint (`tsc --noEmit`) and build green. Dev server smoke on port 3030 confirmed: v0.1.2 card renders, caveat banner present, `iRacing.Setup.Bridge_0.1.0_x64_en-US.msi` link in HTML exactly once.
 **Open:** Set `GITHUB_TOKEN` on Railway (via `railway variables --set`) when the user has a PAT ready — that switches the page to live auto-updating mode. Until then the fallback covers the current state.
 
+### 2026-04-30 12:45 — backend-dev (round 23)
+**Task:** Wire Tauri v2 updater plugin end-to-end: keypair generation, GitHub secrets, plugin registration (Rust + JS), version bump to 0.1.3, CI workflow update.
+**Files:** bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml, bridge-app/src-tauri/src/lib.rs, bridge-app/package.json, bridge-app/package-lock.json, .github/workflows/bridge-build.yml
+**Decisions:**
+- **Signing keypair generated** via `npx @tauri-apps/cli signer generate` with `openssl rand -base64 24` passphrase. Private key uploaded to GitHub Actions via `gh secret set TAURI_PRIVATE_KEY < ~/.tauri-bridge` (file redirect, never echoed). Passphrase uploaded via `cat /tmp/tauri-bridge-pass.txt | tr -d '\n' | gh secret set TAURI_KEY_PASSWORD`. Both local key files and the passphrase tempfile deleted immediately after secrets were set. Verified: `ls ~/.tauri-bridge` -> No such file.
+- **GitHub secrets confirmed set:** `TAURI_PRIVATE_KEY` (2026-05-01) and `TAURI_KEY_PASSWORD` (2026-05-01) visible via `gh secret list`. Values never appeared in stdout, shell history, or this log.
+- **`tauri.conf.json`:** version bumped `0.1.0` -> `0.1.3`; `plugins.updater` block added with `active: true`, endpoint pointing to `releases/latest/download/latest.json`, public key embedded (safe to commit), `windows.installMode: "passive"`.
+- **`Cargo.toml`:** version bumped `0.1.0` -> `0.1.3`; `tauri-plugin-updater = "2"` added to `[dependencies]`.
+- **`lib.rs`:** `.plugin(tauri_plugin_updater::Builder::new().build())` registered as the first plugin in `tauri::Builder::default()` chain (before `tauri_plugin_shell`).
+- **`package.json`:** version bumped `0.1.0` -> `0.1.3`; `@tauri-apps/plugin-updater: ^2.10.1` added via `npm install @tauri-apps/plugin-updater` (JS client for the frontend "Check for Updates" button -- frontend-dev's lane).
+- **`bridge-build.yml`:** build step now passes `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` from repo secrets so the MSI is auto-signed. New steps: `Locate MSI and signature files` (finds `.msi` + `.msi.zip.sig` by glob), `Generate latest.json` (constructs the Tauri v2 update manifest with version/notes/pub_date/signature/url using `date -u` for ISO 8601 UTC). `softprops/action-gh-release@v2` now uploads both the `.msi` and `latest.json` as release assets.
+- **Verification:** `npm run lint` (tsc --noEmit) green. `npm run build` green. YAML valid (`python3 -c "import yaml; yaml.safe_load(..."` no error).
+**Open:**
+- **frontend-dev (same round):** needs to call `@tauri-apps/plugin-updater` from JS. Typical pattern: `import { check } from "@tauri-apps/plugin-updater"; const update = await check(); if (update) await update.downloadAndInstall();`. A "Check for Updates" button in Settings or a top-level menu item is the expected entry point.
+- **team-deployment:** on tag push `bridge-v0.1.3`, verify the Actions run produces a `.msi.zip.sig` file alongside the `.msi` (non-empty sig = signing worked), and that `latest.json` appears as a release asset at the expected URL.
+- **Private key is NOT recoverable** -- it exists only in the GitHub Actions secret. If it is ever lost or rotated, a new keypair must be generated, the public key in `tauri.conf.json` must be updated, and all previously-shipped MSIs will stop being update-able from that new key chain (users would need a manual reinstall for that one transition).
+
 ### 2026-04-30 12:35 — team-deployment (round 22c)
 **Task:** Commit + push round-22c `/releases` fallback fix; trigger Railway deploy; verify production /releases shows the v0.1.2 release card.
 **Files:** app/releases/page.tsx, .env.example, CLAUDE.md
@@ -1626,4 +1643,16 @@ Format per entry:
 - **Logs (~30s tail):** Mounting volume -> Starting Container -> Next.js 16.2.4 -> Ready in 0ms. No errors, no crashes.
 **Open:**
 - Set `GITHUB_TOKEN` on Railway when the user has a GitHub PAT ready (fine-grained, read-only Contents scope). That switches the page from fallback to live auto-updating mode (ISR every 5 min).
+
+### 2026-04-30 13:00 — frontend-dev (round 23)
+**Task:** Three bridge-app UI fixes: (A) white border/dark-theme window background, (B) localeCompare crash on week select, (C) "Check for Updates" UI wiring.
+**Files:** bridge-app/index.html, bridge-app/src-tauri/tauri.conf.json, bridge-app/src/App.tsx, bridge-app/src-tauri/Cargo.toml, bridge-app/src-tauri/src/lib.rs
+**Decisions:**
+- **Fix A (white border):** Added `"backgroundColor": "#030712"` to the window config in `tauri.conf.json` so the native window is dark before React mounts. Added CSS reset `<style>` block in `index.html` setting `html, body, #root { margin:0; padding:0; height:100%; width:100%; background:#030712; overflow:hidden; }` and `* { box-sizing:border-box }`. These two together eliminate the flash-of-white and any margin-caused white edges.
+- **Fix B (localeCompare crash):** Root cause: the `/api/picker/tracks` route returns `{ id, name, setupCount }` but the `Track` interface in `App.tsx` declared `{ trackId, trackName, setupCount }` — mismatched keys meant `a.trackName` was `undefined`, causing `undefined.localeCompare(...)` to throw. Fixed by changing the `Track` interface to `{ id, name, setupCount }` and updating all references (`selectedTrack` lookup, `<option key/value>`, sort comparator, `handleDownload` call). Added null-guards `(a.name ?? "").localeCompare(b.name ?? "")` and `Array.isArray` guard on `data.tracks`.
+- **Fix C (updater UI):** Added `@tauri-apps/plugin-process` (npm) and `tauri-plugin-process = "2"` (Cargo), registered `.plugin(tauri_plugin_process::init())` in `lib.rs`. In `SettingsScreen`: added `checkUpdate` + `relaunch` imports, `updateState` / `updateInfo` / `updateMessage` state, `handleCheckForUpdates` async fn, and a "Check for Updates" section below the Save button with 6 states (idle / checking / uptodate / available / installing / failed). In root `App`: added startup `useEffect` that silently calls `check()` once on mount; if an update is available, sets a yellow dismissable banner visible on any screen.
+- `npm run lint` (tsc --noEmit root) → green. `cd bridge-app && tsc --noEmit` → green. `npm run build` (root Next.js) → green.
+**Open:**
+- Updater cannot be smoke-tested on macOS — requires a signed Windows MSI install. First real test happens when backend-dev/team-deployment tags `bridge-v0.1.4` and a Windows user installs it over `v0.1.3`.
+- `bridge-app/src-tauri/target/` Cargo lock will update to resolve `tauri-plugin-process` on first `cargo build` (Rust compile, owned by build pipeline).
 - When a new bridge release ships: add a new entry at the top of `FALLBACK_RELEASES` in `app/releases/page.tsx` as a belt-and-suspenders backup.

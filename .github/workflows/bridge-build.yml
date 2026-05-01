@@ -52,16 +52,54 @@ jobs:
         working-directory: bridge-app
         run: npm install
 
-      - name: Build Tauri app (release MSI)
+      - name: Build Tauri app (release MSI + signature)
         working-directory: bridge-app
         run: npm run tauri build
         env:
-          # No code-signing cert for now; Tauri will build unsigned.
-          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
-      - name: Upload MSI as GitHub Release asset
+      - name: Locate MSI and signature files
+        id: locate
+        shell: bash
+        run: |
+          MSI=$(find bridge-app/src-tauri/target/release/bundle/msi -name "*.msi" | head -1)
+          SIG=$(find bridge-app/src-tauri/target/release/bundle/msi -name "*.msi.zip.sig" | head -1)
+          echo "msi=$MSI" >> "$GITHUB_OUTPUT"
+          echo "sig=$SIG" >> "$GITHUB_OUTPUT"
+          echo "Found MSI: $MSI"
+          echo "Found SIG: $SIG"
+
+      - name: Generate latest.json update manifest
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./bridge-app/package.json').version")
+          SIG_CONTENT=$(cat "${{ steps.locate.outputs.sig }}")
+          TAG="${GITHUB_REF_NAME:-bridge-v${VERSION}}"
+          MSI_FILENAME=$(basename "${{ steps.locate.outputs.msi }}")
+
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Round 23: in-app updater, white-border fix, localeCompare null guard, Check for Updates UI.",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${SIG_CONTENT}",
+                "url": "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/${TAG}/${MSI_FILENAME}"
+              }
+            }
+          }
+          EOF
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Upload MSI and update manifest as GitHub Release assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: bridge-app/src-tauri/target/release/bundle/msi/*.msi
+          files: |
+            ${{ steps.locate.outputs.msi }}
+            latest.json
           generate_release_notes: true
