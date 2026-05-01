@@ -29,6 +29,7 @@ export interface ShopFiles {
   shopName: string;
   shopSlug: string;
   datapackId: string | null;
+  externalId: string | null;
   fileNames: string[];
   cached: boolean;
 }

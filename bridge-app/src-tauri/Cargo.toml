@@ -1,6 +1,6 @@
 [package]
 name = "iracing-setup-bridge"
-version = "0.2.1"
+version = "0.3.0"
 description = "iRacing Setup Bridge — desktop app to download setups from the comparison site"
 authors = ["Ricardo Silva"]
 edition = "2021"
@@ -31,6 +31,8 @@ keyring = { version = "3", features = ["windows-native"] }
 # dirs for locating the OS config directory (%APPDATA% on Windows).
 dirs = "5"
 anyhow = "1"
+# url for parsing and origin-checking asset_url (SSRF guard in download_setups).
+url = "2"
 # zip for unpacking the downloaded setup archive.
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio = { version = "1", features = ["full"] }

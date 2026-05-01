@@ -2137,3 +2137,58 @@ Format per entry:
 - **Dockerfile `npx --yes` fix is now committed** (second commit this round) — future deploys will auto-confirm the prisma install and the schema migration will self-apply without manual SSH. Next deploy will validate this path.
 - **Round 30 (Phase B of HYMO file-download):** with `externalId` in place, build `lib/scrape/hymo-files-auth.ts` + `/api/files/hymo/[productId]/route.ts` + bridge wiring. Blocked on HYMO_PASSWORD rotation (pre-existing open from round 28).
 - Rotate `HYMO_PASSWORD` before round 30 starts — it appeared in chat (round-28 open). Update `.env` and Railway vars simultaneously.
+
+### 2026-05-01 00:00 — backend-dev (round 30)
+**Task:** HYMO file-download pipeline: auth helper, file cache lib, three API routes, Rust bridge `assetUrl` field, version bump to 0.3.0.
+**Files:** lib/scrape/hymo-files-auth.ts (new), lib/scrape/hymo-files.ts (new), app/api/files/hymo/[productId]/route.ts (new), app/api/files/hymo/[productId]/[filename]/route.ts (new), app/api/files/hymo/[productId]/zip/route.ts (new), bridge-app/src-tauri/src/lib.rs, bridge-app/src-tauri/Cargo.toml, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json
+**Decisions:**
+- **Auth shape corrected vs probe spec.** Round-28 probe noted `access_token` at root; actual live response wraps it under `data.access_token` (Laravel envelope `{ status, message, data: { access_token, ... } }`). Fixed during smoke. Similarly `downloadURL` is under `data.downloadURL`. Both corrected before final smoke.
+- **Double-ZIP discovered and handled.** HYMO's outer ZIP contains a single inner `.zip` (not flat `.sto` files). `downloadAndExtract` now runs a second-pass `unzip -j` on any `.zip` files found after the first extraction, then deletes the inner wrapper. Result: 10 real files extracted (8x `.sto`, 1x `.blap`, 1x `.rpy`) for product 1474.
+- **Cache layout:** `<FILES_CACHE_ROOT>/hymo/<productId>/<filename>`. Standalone server resolves `FILES_CACHE_ROOT` from `DATABASE_PATH` env var (same pattern as GnG manifest). In production that is `/app/data/files/hymo/`.
+- **Rust bridge:** added `asset_url: Option<String>` to `DownloadArgs`. When `Some`, validates that the URL shares the same origin as `server_url` (SSRF guard using `url` crate), then uses it directly instead of building `<server>/api/files/<datapackId>/zip`. `url = "2"` added to Cargo.toml dependencies.
+- **Smoke results (product 1474 — BMW M4 GT3 EVO / Hockenheimring W3):** cache miss 8.1s (login + download + double-extract); cache hit 10ms; ZIP 147ms, 10 entries. 401 no-auth: correct. 400 non-numeric ID: correct. `grep -c '^ADMIN_' .env` = 0.
+- **Lint + build:** `npm run lint` (tsc --noEmit) green. `npm run build` green; all three new routes appear in route table as dynamic ƒ. `cd bridge-app && npx tsc --noEmit` green (exit 0).
+- **proxy.ts matcher `/api/files/:path*` already covers `/api/files/hymo/...`** — no middleware change needed.
+**Open:**
+- **team-deployment must set `HYMO_EMAIL` + `HYMO_PASSWORD` on Railway** before the new routes are useful in production. Values are in local `.env`. Set via `railway variables --set "HYMO_EMAIL=..." --stdin --skip-deploys` pattern to avoid stdout exposure.
+- **Alpine `unzip` package** must be present in the Railway runner image. Check Dockerfile — `apk add chromium` (round 7) pulls it transitively on Alpine 3.22, but this should be verified post-deploy. If missing, add `unzip` explicitly to the `apk add` line in the Dockerfile runner stage.
+- `HYMO_PASSWORD` rotation still pending (appeared in chat round 28). Rotate simultaneously in `.env` and Railway before next deploy that uses the HYMO routes in production.
+- Bridge 0.3.0 version bump is in all three manifests; frontend-dev (next round) handles the JS-side `assetUrl` wiring in the download invocation.
+
+### 2026-05-01 00:00 — frontend-dev (round 30)
+**Task:** Wire HYMO download support (Tasks A, B, C) — add `externalId` to `ShopFiles` type; update Bulk dispatch logic; update Picker `handleDownload` + button condition.
+**Files:** bridge-app/src/types.ts, bridge-app/src/screens/Bulk.tsx, bridge-app/src/screens/Picker.tsx
+**Decisions:**
+- `ShopFiles` now has `externalId: string | null` (round 29 API field). GnG entries populate `datapackId`; HYMO entries populate `externalId`.
+- `Bulk.tsx`: replaced the old `!shopFile.datapackId` skip guard with a 3-branch dispatch: GnG → `assetUrl=null` (Rust constructs URL from `datapackId`); HYMO → `assetUrl = serverUrl + /api/files/hymo/<externalId>/zip`; others → logged skip with "no file pipeline yet". `datapackId` sent as `""` for HYMO (Rust checks `asset_url.is_some()` first). `settings` prop destructure un-prefixed from `_settings` since it is now used.
+- `Picker.tsx`: `handleDownload` builds `assetUrl` on the same 3-branch logic before entering the folder-validation / invoke path. Button render condition changed from `sf.datapackId && ...` to `((sf.shopSlug === "grid-and-go" && sf.datapackId) || (sf.shopSlug === "hymo" && sf.externalId)) && ...` so HYMO rows get a Download button. File-count label also updated to show "ready to download" for HYMO rows that have `externalId`.
+- No version bump (backend already owns 0.3.0). No Rust/capability changes. No other screens touched.
+**Open:** Real test only possible after team-deployment ships v0.3.0 and the user installs. `unzip` in Alpine runner and HYMO_EMAIL/HYMO_PASSWORD on Railway are backend-dev/team-deployment prerequisites (round 30 open items).
+
+### 2026-05-01 22:00 — team-qa (round 30)
+**Task:** Verify HYMO file-download pipeline end-to-end: server routes, auth gate, manifest/cache, file/ZIP streams, 400 paths, GnG regression, bridge version, bridge tsc.
+**Tests added/changed:** none (curl smoke verification)
+**Suite result:** all checks PASS
+**Manual checks:**
+- `npm run lint` (tsc --noEmit) → green (server).
+- `npm run build` → green; all 3 new routes in route table: `/api/files/hymo/[productId]` (ƒ), `/api/files/hymo/[productId]/[filename]` (ƒ), `/api/files/hymo/[productId]/zip` (ƒ).
+- Dev server started on port 3030 (killed the stale process first; ADMIN creds added to `.env` for tests, removed after).
+- Auth gate: all 3 new routes → 401 with `WWW-Authenticate: Basic realm="iRacing Setup Admin"`. PASS.
+- Manifest cache miss: `GET /api/files/hymo/1474` → 200 in 6.998s, `cached:false`, 10 files listed. Files on disk at `data/files/hymo/1474/`. PASS.
+- Manifest cache hit: second call → 200 in 7.7ms, `cached:true`. PASS.
+- File stream: `GET /api/files/hymo/1474/HYMO_IMSA_26S2_M4GT3_Hockenheim_CQ.sto` → 200, 2176 bytes. PASS.
+- ZIP stream: `GET /api/files/hymo/1474/zip` → 200, `application/zip`, 4.9 MB, 10 files confirmed via `unzip -l`. PASS.
+- 400 paths: invalid productId `notanumber` → 400; 11-digit productId → 400; path-traversal `..%2F..%2Fetc%2Fpasswd` → 400. PASS.
+- GnG regression: `/api/files/cvuxs9WJyzy3/zip` → 200, 6.5 MB valid ZIP. PASS.
+- Picker API: `/api/picker/files?weekNum=3&trackId=28&carId=3` → HYMO `externalId="1474"` non-null, GnG `externalId=null`. PASS.
+- Other invariants: `/` 200, `/week/3/track/28?carClass=GT3` 200, `/admin` no-auth → 401, `/admin` with creds → 200, `/api/ingest` GET → 405, `/api/picker/cars?weekNum=3&trackId=28` → 200 with `iracingFolderName`. PASS.
+- Bridge versions: `package.json`, `tauri.conf.json`, `Cargo.toml` all at 0.3.0. PASS.
+- Bridge tsc (`npx tsc --noEmit` from bridge-app): exit 0, green. PASS.
+- Rust `asset_url: Option<String>` field confirmed in `lib.rs:59`; SSRF origin-match guard confirmed at `lib.rs:500-510` using `url::Url::parse`. PASS.
+- JS 3-branch dispatch confirmed in `Picker.tsx:155-183` and `Bulk.tsx:88-132`: GnG → `assetUrl=null`, HYMO → `assetUrl=serverUrl+/api/files/hymo/<externalId>/zip`, others → skip. PASS.
+- ADMIN creds removed from `.env` post-test (`grep -c '^ADMIN_' .env` → 0). Dev server on 3030 killed.
+- Note: `/api/latest-bridge` returns `{"error":"Updater proxy not configured"}` in local dev (no `UPDATER_PROXY_URL`) — pre-existing, not a round-30 regression.
+**Bugs found:** none.
+**Open:**
+- Production prerequisites for team-deployment: set `HYMO_EMAIL` + `HYMO_PASSWORD` on Railway; verify `unzip` in Alpine runner image (may be present transitively from r7's `apk add chromium`).
+- `HYMO_PASSWORD` rotation still pending (appeared in chat in round 28).

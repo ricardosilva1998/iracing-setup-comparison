@@ -49,6 +49,14 @@ struct DownloadArgs {
     /// iracing_folder_name is absent. Additive field — v0.1.x callers that omit
     /// it continue to work unchanged.
     car_name: Option<String>,
+    /// Explicit ZIP download URL supplied by the caller (used for HYMO and any
+    /// future shop whose zip endpoint differs from the GnG pattern).
+    /// When Some: used directly instead of constructing the URL from datapack_id.
+    /// When None: falls back to the existing GnG pattern
+    ///   (<serverUrl>/api/files/<datapack_id>/zip).
+    /// The URL is validated to share the same origin as server_url to prevent
+    /// SSRF. Additive field — callers that omit it keep the existing behaviour.
+    asset_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -472,11 +480,45 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
     fs::create_dir_all(&target_dir)
         .map_err(|e| format!("could not create target directory: {}", e))?;
 
-    let zip_url = format!(
-        "{}/api/files/{}/zip",
-        file.server_url.trim_end_matches('/'),
-        id
-    );
+    // Build the ZIP URL. When the caller provides an explicit asset_url, use it
+    // directly (HYMO and future shops). Validate that it shares the same origin
+    // as server_url to prevent SSRF — a compromised frontend cannot redirect the
+    // bridge to an arbitrary host.
+    let zip_url = if let Some(ref url) = args.asset_url {
+        let configured_origin = {
+            let base = file.server_url.trim_end_matches('/');
+            // Extract origin: everything up to and including the host[:port].
+            match url::Url::parse(base) {
+                Ok(u) => format!(
+                    "{}://{}",
+                    u.scheme(),
+                    u.host_str().unwrap_or("")
+                ),
+                Err(_) => return Err(format!("invalid server_url: {}", base)),
+            }
+        };
+        let asset_origin = match url::Url::parse(url) {
+            Ok(u) => format!(
+                "{}://{}",
+                u.scheme(),
+                u.host_str().unwrap_or("")
+            ),
+            Err(_) => return Err(format!("invalid asset_url: {}", url)),
+        };
+        if asset_origin != configured_origin {
+            return Err(format!(
+                "asset_url origin '{}' does not match configured server origin '{}'",
+                asset_origin, configured_origin
+            ));
+        }
+        url.clone()
+    } else {
+        format!(
+            "{}/api/files/{}/zip",
+            file.server_url.trim_end_matches('/'),
+            id
+        )
+    };
 
     let mut resp = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(120))

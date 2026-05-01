@@ -17,7 +17,7 @@ interface Props {
   overrides: Record<string, string>;
 }
 
-export function BulkScreen({ settings: _settings, overrides }: Props) {
+export function BulkScreen({ settings, overrides }: Props) {
   const [weeks, setWeeks] = useState<Week[]>([]);
   const [bulkShop, setBulkShop] = useState<string>("grid-and-go");
   const [bulkWeek, setBulkWeek] = useState<number | null>(null);
@@ -85,12 +85,17 @@ export function BulkScreen({ settings: _settings, overrides }: Props) {
           status: "downloading",
         });
 
-        if (!shopFile.datapackId) {
+        let assetUrl: string | null = null;
+        if (shopFile.shopSlug === "grid-and-go" && shopFile.datapackId) {
+          assetUrl = null;
+        } else if (shopFile.shopSlug === "hymo" && shopFile.externalId) {
+          assetUrl = `${settings.serverUrl}/api/files/hymo/${shopFile.externalId}/zip`;
+        } else {
           const entry: BulkLogEntry = {
             car: car.name,
             track: track.name,
             status: "skipped",
-            message: "Shop has no file pipeline for this car/track",
+            message: `Shop "${shopFile.shopName}" has no file pipeline yet.`,
           };
           setBulkLog((prev) => [...prev, entry]);
           setBulkProgress((p) => (p ? { ...p, status: "skipped" } : p));
@@ -121,9 +126,10 @@ export function BulkScreen({ settings: _settings, overrides }: Props) {
                 seasonLabel: "26s2",
                 trackSlug: slugify(track.name),
                 shopSlug: bulkShop,
-                datapackId: shopFile.datapackId,
+                datapackId: shopFile.datapackId ?? "",
                 iracingFolderName: folder,
                 carName: car.name,
+                assetUrl,
               },
             },
           );

@@ -152,7 +152,16 @@ export function PickerScreen({ settings, overrides, onOverridesChanged }: Props)
   }
 
   async function handleDownload(shopFile: ShopFiles, carName: string, trackName: string) {
-    if (!shopFile.datapackId) return;
+    let assetUrl: string | null = null;
+    let resolvedDatapackId = "";
+    if (shopFile.shopSlug === "grid-and-go" && shopFile.datapackId) {
+      resolvedDatapackId = shopFile.datapackId;
+      assetUrl = null;
+    } else if (shopFile.shopSlug === "hymo" && shopFile.externalId) {
+      assetUrl = `${settings.serverUrl}/api/files/hymo/${shopFile.externalId}/zip`;
+    } else {
+      return;
+    }
     const trimmedFolder = currentIracingFolder.trim();
     if (!trimmedFolder) {
       setFolderError("Enter iRacing folder first");
@@ -168,9 +177,10 @@ export function PickerScreen({ settings, overrides, onOverridesChanged }: Props)
           seasonLabel: "26s2",
           trackSlug: slugify(trackName),
           shopSlug: shopFile.shopSlug,
-          datapackId: shopFile.datapackId,
+          datapackId: resolvedDatapackId,
           iracingFolderName: trimmedFolder || null,
           carName,
+          assetUrl,
         },
       });
       const count = result.fileNames.length;
@@ -330,14 +340,17 @@ export function PickerScreen({ settings, overrides, onOverridesChanged }: Props)
                 <div style={styles.shopInfo}>
                   <span style={styles.shopName}>{sf.shopName}</span>
                   <span style={styles.fileCount}>
-                    {sf.datapackId
+                    {sf.datapackId || sf.externalId
                       ? sf.fileNames.length > 0
                         ? `${sf.fileNames.length} files cached`
                         : "ready to download"
                       : "no auto-download"}
                   </span>
                 </div>
-                {sf.datapackId && selectedCar && selectedTrack && (
+                {((sf.shopSlug === "grid-and-go" && sf.datapackId) ||
+                  (sf.shopSlug === "hymo" && sf.externalId)) &&
+                  selectedCar &&
+                  selectedTrack && (
                   <div style={styles.shopAction}>
                     <button
                       style={
