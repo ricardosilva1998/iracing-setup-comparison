@@ -1892,3 +1892,21 @@ Format per entry:
 - No version bumps (backend already did 0.1.7 → 0.1.8). No tauri.conf.json, Cargo.toml, or route changes.
 - `npx tsc --noEmit` → clean.
 **Open:** Progress bar is indeterminate when `total === 0` (Tauri plugin may not always fire `Started` with a `contentLength`). Acceptable for v0.1.8 — the label still shows bytes downloaded. Cancel-mid-update and persistent "last updated at" stamp deferred to future rounds.
+
+### 2026-05-01 17:23 — team-deployment (round 25-fix)
+**Task:** Ship bridge v0.1.8 (visible installer + download progress). Phase 1: commit + tag + GitHub Actions build. Phase 2: /releases fallback list update + Railway web deploy.
+**Commits:**
+- `10e4256` — "fix(round 25): bridge v0.1.8 — visible installer + download progress" (5 files: CLAUDE.md, bridge-app/package.json, bridge-app/src-tauri/Cargo.toml, bridge-app/src-tauri/tauri.conf.json, bridge-app/src/App.tsx)
+- `d7d2c54` — "docs(round 25-fix): /releases lists bridge-v0.1.8" (app/releases/page.tsx)
+**Pushed to:** origin/main @ d7d2c54
+**PR:** n/a
+**Deploy:**
+- Phase 1: `git tag bridge-v0.1.8 && git push origin bridge-v0.1.8` → GitHub Actions `bridge-build.yml` run `25223649435` → SUCCESS in ~14 min. Assets: `iRacing.Setup.Bridge_0.1.8_x64_en-US.msi` (3272704 bytes, sha256 d638fff9…) + `latest.json` published to GitHub Release `bridge-v0.1.8`.
+- Phase 2: `railway up --detach` → deployment `58d42a4c` → SUCCESS. /releases → 200. `/api/latest-bridge` → `"0.1.8"` (proxy ISR updated within ~90s of build completion).
+**Build time:** Phase 1 GitHub Actions ~14 min (Tauri Windows cross-compile). Phase 2 Railway ~75s.
+**Healthcheck:** pass — `/` 200, `/releases` 200, `/api/latest-bridge` → `"0.1.8"`.
+**Logs after deploy (60s window):** clean — Mounting volume → Starting Container → Next.js 16.2.4 → Ready in 0ms. No errors, no restart cycles.
+**Open:**
+- User is currently mid-failed-update on v0.1.6. They must manually install v0.1.8 from the MSI URL (force-quit the bridge first if still running). From v0.1.8 onwards in-app updates show the visible installer + progress.
+- Progress bar is indeterminate when `contentLength` is 0 (Tauri `Started` event may not always carry this). Deferred to future round.
+- Cancel-mid-update and "last updated at" stamp deferred.
