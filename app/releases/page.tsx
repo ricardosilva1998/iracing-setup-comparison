@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.1.7",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.1.7_x64_en-US.msi",
+        sizeBytes: 3272704,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.7/iRacing.Setup.Bridge_0.1.7_x64_en-US.msi",
+      },
+    ],
+    body: "Round 25: native Windows folder picker (Browse… buttons) for both Settings → iRacing Setups Root and Picker → iRacing folder. No more typing folder names. From v0.1.6+ you can install this via Settings → Check for Updates inside the app.",
+  },
+  {
     tagName: "bridge-v0.1.6",
     publishedAt: "2026-04-30",
     assets: [
