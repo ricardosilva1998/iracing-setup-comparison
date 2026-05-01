@@ -1588,14 +1588,12 @@ Format per entry:
 
 ### 2026-04-30 13:00 — backend-dev (round 22b fix)
 **Task:** Fix Rust compile failure from bridge-v0.1.0 GH Actions run by splitting Tauri code into `lib.rs` + `main.rs` shim per Tauri v2 idiom.
-**Files:** bridge-app/src-tauri/src/lib.rs (new), bridge-app/src-tauri/src/main.rs (rewritten to shim)
+**Files:** bridge-app/src-tauri/src/lib.rs (new), bridge-app/src-tauri/src/main.rs (rewritten to shim), bridge-app/src-tauri/icons/ (all 5 icons committed)
 **Decisions:**
-- Root cause: `Cargo.toml` declares `[lib] name = "iracing_setup_bridge_lib"` but no `src/lib.rs` existed. Rust resolves `[lib]` to `src/lib.rs` by convention (no explicit `path =`). `cargo metadata` failed before any compilation.
-- Created `bridge-app/src-tauri/src/lib.rs` containing all types, helpers, `#[tauri::command]` functions, and a `pub fn run()` that wires the Tauri builder. Exact port of what was in `main.rs` — no logic changes.
-- Replaced `main.rs` with the standard 5-line Tauri v2 shim: `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` + `fn main() { iracing_setup_bridge_lib::run() }`.
-- `Cargo.toml` unchanged — `[lib]` + `[[bin]]` sections were already correct; the missing file was the only problem.
-- `cargo check` not run locally (Rust not installed on Mac); GitHub Actions Windows runner is the gate.
-- Tag `bridge-v0.1.1` pushed to trigger the workflow.
+- Root cause (fix 1): `Cargo.toml` declares `[lib] name = "iracing_setup_bridge_lib"` but no `src/lib.rs` existed. Rust resolves `[lib]` to `src/lib.rs` by convention (no explicit `path =`). `cargo metadata` failed before any compilation. Created `bridge-app/src-tauri/src/lib.rs` with all types, helpers, `#[tauri::command]` functions, and `pub fn run()`. Replaced `main.rs` with the standard 5-line Tauri v2 shim. `Cargo.toml` unchanged. Tagged `bridge-v0.1.1`.
+- Bridge-v0.1.1 GH Actions run `25211194207`: **FAILURE** — but the original "can't find library" error was gone. New error: `` `icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build ``. Root cause (fix 2): `bridge-app/src-tauri/icons/` (5 placeholder PNG/ICO/ICNS files) was never committed in round 22b — the directory was simply untracked. Fix: committed all 5 icon files (128x128.png, 128x128@2x.png, 32x32.png, icon.icns, icon.ico). Tagged `bridge-v0.1.2`.
+- Bridge-v0.1.2 GH Actions run `25211497388`: **SUCCESS**. Windows MSI produced and published to GitHub Release.
+- MSI download URL: https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.2/iRacing.Setup.Bridge_0.1.0_x64_en-US.msi (3.0 MB, sha256: 86eea2b67c8e1868a31f8284165d775f95e852ca8da0de27d573bd195636f899).
 **Open:**
-- GH Actions run `25211194207` for `bridge-v0.1.1`: **FAILURE** — but a NEW error. The `lib.rs` fix fully resolved the original "can't find library" error. New error: `` `icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build ``. The `bridge-app/src-tauri/icons/` directory (5 placeholder icons: 128x128.png, 128x128@2x.png, 32x32.png, icon.icns, icon.ico) was never committed in round 22b — the directory was untracked. Fix: `git add bridge-app/src-tauri/icons/` committed in the same round as this log entry. Tag `bridge-v0.1.2` pushed immediately after.
 - All round-11 carry-overs unchanged (VRS, image footprint, etc).
+- The `/releases` page in production currently shows "No bridge releases yet" — it may need wiring to the GitHub Releases API to surface this asset automatically. Manual direct link works in the meantime.
