@@ -1712,3 +1712,32 @@ Format per entry:
 - Proxy fix (browser_download_url vs asset.url) is a deviation from the team-qa-approved route. This was a correctness bug only discoverable against a live private-repo release; the fix is minimal and safe. No new test needed (the live proxy verification is the integration test).
 - Proxy returns `version: "0.1.4"` — Tauri updater in existing v0.1.3 installs will see a newer version on next Settings → Check for Updates and offer the in-app upgrade to v0.1.4.
 - GITHUB_TOKEN confirmed present on Railway; `P1DOKS_*`, `GRID_AND_GO_*`, `INGEST_SECRET` all unchanged. No re-roll needed.
+
+### 2026-04-30 — backend-dev (round 24)
+**Task:** Add iRacing car-folder mapping; surface `iracingFolderName` on picker APIs; update Rust `download_setups` to accept verbatim folder name.
+**Files:** lib/iracing-car-folders.ts (new), app/api/picker/cars/route.ts, app/api/picker/files/route.ts, bridge-app/src-tauri/src/lib.rs, CLAUDE.md
+**Decisions:**
+- `lib/iracing-car-folders.ts` — new module with `IRACING_CAR_FOLDERS` (39 confirmed entries, user-screenshot-verified) and `lookupIracingFolder(canonicalName): string | null`. iRacing folder names are arbitrary internal IDs (`porsche9922cup`, `mx5 mx52016` with a space, etc.) — NOT derivable by slugifying the display name. 10 cars deliberately omitted (see inline comments): Ford GT GTE (ambiguous between two folders), Lexus RC F GT3 / KTM X-BOW GT2 / Ginetta G55 GT4 / FIA F4 / Ray FF1600 / Skip Barber / O'Reilly chassis (not in user screenshots), NASCAR Cup/Truck (ambiguous folder candidates). These fall back to manual user input.
+- `app/api/picker/cars/route.ts` — extended response from `{ id, name, carClass }` to `{ id, name, carClass, iracingFolderName: string | null }`. One additional `lookupIracingFolder(row.carName)` call per row; no extra DB queries.
+- `app/api/picker/files/route.ts` — extended `setupListing.findMany` select to include `car: { select: { name: true } }` (one additional join, same query). Car name resolved from `listings[0]?.car.name`. Response extended from `{ files }` to `{ files, iracingFolderName: string | null }`. All three early-return paths (`!activeSeasonId`, `!seasonWeek`, error) now consistently include `iracingFolderName: null`.
+- `bridge-app/src-tauri/src/lib.rs` — `DownloadArgs` gains `iracing_folder_name: Option<String>`. New `safe_folder_name()` helper rejects `..` and path separators but preserves spaces, dots, hyphens, underscores (all present in real iRacing folder names). `download_setups` uses verbatim folder when provided; falls back to `slugify(car_slug)` when `None` or empty — preserves v0.1.4 contract exactly (existing callers that omit the field are unaffected). Path comment updated to `<carFolder>/<seasonLabel>/<trackSlug>/<shopSlug>`.
+- `npm run lint` (tsc --noEmit) green. `npm run build` green (all 12 routes generated). `npx tsc --noEmit` in bridge-app green. No test infra in bridge-app; no Rust toolchain on this machine for `cargo check` — Rust change is structural-only (add field + add helper + update one variable reference).
+**Open:**
+- frontend-dev to add the editable folder override UI in `bridge-app/src/App.tsx` (user's suggestion: "maybe we can add a way on the bridge app to adjust the end folder if you map it incorrectly"). The `iracingFolderName` is now available in both picker API responses; the UI just needs to surface it as a pre-filled input that the user can edit before downloading.
+- Track-level iRacing folder mapping is a future problem (track folders also follow internal IDs, but we can't confirm them from screenshots). Round 25+ if needed.
+- No version bump yet — frontend-dev does that after the UI work.
+
+### 2026-04-30 — frontend-dev (round 24)
+**Task:** Editable iRacing folder input in bridge-app Files panel; pass `iracingFolderName` to `download_setups`; version bump to 0.1.5.
+**Files:** bridge-app/src/App.tsx, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml, CLAUDE.md
+**Decisions:**
+- `Car` interface extended with `iracingFolderName: string | null` (Task A).
+- Files-load effect now typed as `{ files: ShopFiles[]; iracingFolderName: string | null }`. On each car selection the effect sets two new state slots: `folderFromApi` (raw API value, preserved for the null-warning condition) and `currentIracingFolder` (working string, pre-filled from API or `""` when null). Both reset on every new car selection so stale data never leaks across selections.
+- Folder input rendered at the top of the Files panel (above the "Available Files" heading, inside the same `filesPanel` container, separated by the existing border token). Amber warning box appears when `folderFromApi === null` and no folder-validation error is active — mirrors the task spec. Inline `folderError` state drives the red border on the input + the "Enter iRacing folder first" error text below.
+- `handleDownload` gates on `currentIracingFolder.trim()` — empty after trim sets `folderError` and returns early without invoking Rust. Passes `iracingFolderName: trimmedFolder || null` to `download_setups`; Rust's `slugify(car_slug)` fallback fires when `null` (defensive, matches the backend-dev contract).
+- No persistence (localStorage / Tauri config write) — transient session state only, per task spec.
+- Version bumped to 0.1.5 in all three canonical locations (package.json, tauri.conf.json, Cargo.toml).
+- `npx tsc --noEmit` in bridge-app → green. No test infra in bridge-app.
+**Open:**
+- Track-level iRacing folder mapping (round 25+ carry-over from backend-dev).
+- Persistence of user-edited folder overrides across sessions (future round if it becomes painful).

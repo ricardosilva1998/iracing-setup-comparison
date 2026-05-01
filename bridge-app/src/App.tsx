@@ -29,6 +29,7 @@ interface Car {
   id: number;
   name: string;
   carClass: string;
+  iracingFolderName: string | null;
 }
 
 interface ShopFiles {
@@ -261,6 +262,9 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
   const [downloadStates, setDownloadStates] = useState<Record<string, "idle" | "downloading" | "done" | "error">>({});
   const [downloadMessages, setDownloadMessages] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [currentIracingFolder, setCurrentIracingFolder] = useState<string>("");
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [folderFromApi, setFolderFromApi] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<{ weeks: Week[] }>("fetch_picker", { endpoint: "weeks" })
@@ -316,13 +320,16 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
       return;
     }
     setLoadingFiles(true);
-    invoke<{ files: ShopFiles[] }>("fetch_picker", {
+    invoke<{ files: ShopFiles[]; iracingFolderName: string | null }>("fetch_picker", {
       endpoint: `files?weekNum=${weekNum}&trackId=${trackId}&carId=${carId}`,
     })
       .then((data) => {
         setFiles(data.files);
         setDownloadStates({});
         setDownloadMessages({});
+        setFolderFromApi(data.iracingFolderName);
+        setCurrentIracingFolder(data.iracingFolderName ?? "");
+        setFolderError(null);
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoadingFiles(false));
@@ -330,6 +337,12 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
 
   async function handleDownload(shopFile: ShopFiles, carName: string, trackName: string) {
     if (!shopFile.datapackId) return;
+    const trimmedFolder = currentIracingFolder.trim();
+    if (!trimmedFolder) {
+      setFolderError("Enter iRacing folder first");
+      return;
+    }
+    setFolderError(null);
     const key = shopFile.shopSlug;
     setDownloadStates((prev) => ({ ...prev, [key]: "downloading" }));
     try {
@@ -340,6 +353,7 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
           trackSlug: slugify(trackName),
           shopSlug: shopFile.shopSlug,
           datapackId: shopFile.datapackId,
+          iracingFolderName: trimmedFolder || null,
         },
       });
       const count = result.fileNames.length;
@@ -450,6 +464,36 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
 
       {files && !loadingFiles && (
         <div style={styles.filesPanel}>
+          <div style={styles.folderRow}>
+            <label style={styles.folderLabel} htmlFor="iracing-folder-input">
+              iRacing folder
+            </label>
+            <input
+              id="iracing-folder-input"
+              style={folderError ? { ...styles.input, borderColor: COLOR.red } : styles.input}
+              type="text"
+              value={currentIracingFolder}
+              onChange={(e) => {
+                setCurrentIracingFolder(e.target.value);
+                if (e.target.value.trim()) setFolderError(null);
+              }}
+              placeholder="e.g. porsche9922cup"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+            {folderError && (
+              <span style={styles.folderErrorText}>{folderError}</span>
+            )}
+            {folderFromApi === null && !folderError && (
+              <div style={styles.folderWarning}>
+                No iRacing folder mapping for this car — please enter one manually before downloading.
+              </div>
+            )}
+            <p style={styles.folderHint}>
+              Files will be saved to &lt;root&gt;/{currentIracingFolder || "…"}/&lt;season&gt;/&lt;track&gt;/&lt;shop&gt;/.
+            </p>
+          </div>
           <h2 style={styles.filesHeading}>Available Files</h2>
           {files.map((sf) => {
             const dlState = downloadStates[sf.shopSlug] ?? "idle";
@@ -975,4 +1019,35 @@ const styles: Record<string, React.CSSProperties> = {
     top: 0,
     zIndex: 10,
   } as React.CSSProperties,
+  folderRow: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.35rem",
+    padding: "0.75rem 1rem",
+    borderBottom: `1px solid ${COLOR.border}`,
+  } as React.CSSProperties,
+  folderLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: COLOR.muted,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  } as React.CSSProperties,
+  folderHint: {
+    margin: 0,
+    fontSize: 11,
+    color: COLOR.muted,
+  },
+  folderWarning: {
+    backgroundColor: "#1c1000",
+    border: `1px solid #78350f`,
+    color: COLOR.yellow,
+    borderRadius: 5,
+    padding: "0.4rem 0.6rem",
+    fontSize: 12,
+  },
+  folderErrorText: {
+    fontSize: 12,
+    color: COLOR.red,
+  },
 };

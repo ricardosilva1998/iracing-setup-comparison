@@ -38,6 +38,11 @@ struct DownloadArgs {
     track_slug: String,
     shop_slug: String,
     datapack_id: String,
+    /// iRacing-internal setup folder name for this car (e.g. "porsche9922cup").
+    /// When present, used verbatim as the car-level folder instead of slugifying
+    /// car_slug. Falls back to slugify(car_slug) when None or empty — preserves
+    /// the v0.1.4 contract so older callers that omit this field still work.
+    iracing_folder_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +100,19 @@ fn safe_segment(s: &str) -> anyhow::Result<String> {
         anyhow::bail!("segment slugified to empty string: {:?}", s);
     }
     Ok(slug)
+}
+
+/// Validate a verbatim iRacing folder name (e.g. "porsche9922cup", "mx5 mx52016").
+/// Preserves spaces, dots, hyphens, and underscores — all of which appear in real
+/// iRacing folder names. Rejects path separators and ".." to prevent traversal.
+fn safe_folder_name(s: &str) -> anyhow::Result<String> {
+    if s.is_empty() {
+        anyhow::bail!("iracing folder name is empty");
+    }
+    if s.contains("..") || s.contains('/') || s.contains('\\') {
+        anyhow::bail!("invalid iracing folder name (path traversal): {:?}", s);
+    }
+    Ok(s.to_string())
 }
 
 /// Load password for the fixed "admin" account from the OS keychain.
@@ -243,8 +261,16 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
     let file = read_settings_file().map_err(|e| e.to_string())?;
     let password = load_credentials().map_err(|e| e.to_string())?;
 
-    // Slugify all caller-supplied path segments to prevent directory traversal.
-    let car_slug = safe_segment(&args.car_slug).map_err(|e| e.to_string())?;
+    // Determine the car-level folder name. When the caller supplies an iRacing-
+    // internal folder name (e.g. "porsche9922cup", "mx5 mx52016"), use it verbatim
+    // after a traversal-safety check. Fall back to slugifying car_slug so existing
+    // v0.1.4 callers that omit iracing_folder_name continue to work unchanged.
+    let car_folder = match args.iracing_folder_name.as_deref() {
+        Some(name) if !name.trim().is_empty() => {
+            safe_folder_name(name.trim()).map_err(|e| e.to_string())?
+        }
+        _ => safe_segment(&args.car_slug).map_err(|e| e.to_string())?,
+    };
     let season_label = safe_segment(&args.season_label).map_err(|e| e.to_string())?;
     let track_slug = safe_segment(&args.track_slug).map_err(|e| e.to_string())?;
     let shop_slug = safe_segment(&args.shop_slug).map_err(|e| e.to_string())?;
@@ -258,9 +284,9 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
         return Err(format!("invalid datapack_id: {}", id));
     }
 
-    // Build: <iracingRoot>/<carSlug>/<seasonLabel>/<trackSlug>/<shopSlug>/
+    // Build: <iracingRoot>/<carFolder>/<seasonLabel>/<trackSlug>/<shopSlug>/
     let target_dir = PathBuf::from(&file.iracing_root)
-        .join(&car_slug)
+        .join(&car_folder)
         .join(&season_label)
         .join(&track_slug)
         .join(&shop_slug);

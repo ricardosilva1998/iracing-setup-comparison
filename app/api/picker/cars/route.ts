@@ -14,6 +14,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getTrackCompareData } from "@/lib/compare-data";
+import { lookupIracingFolder } from "@/lib/iracing-car-folders";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
         id: row.carId,
         name: row.carName,
         carClass: row.carClass,
+        iracingFolderName: lookupIracingFolder(row.carName),
       }));
 
     return NextResponse.json({ cars }, { headers: CORS_HEADERS });

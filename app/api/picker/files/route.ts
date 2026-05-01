@@ -25,6 +25,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { shopNameToSlug } from "@/lib/shop-slug";
 import { getOrFetchManifest, validateDatapackId } from "@/lib/files-manifest";
+import { lookupIracingFolder } from "@/lib/iracing-car-folders";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
     const activeSeasonId = seasons[0]?.id ?? null;
 
     if (!activeSeasonId) {
-      return NextResponse.json({ files: [] }, { headers: CORS_HEADERS });
+      return NextResponse.json({ files: [], iracingFolderName: null }, { headers: CORS_HEADERS });
     }
 
     const seasonWeek = await prisma.seasonWeek.findUnique({
@@ -94,14 +95,22 @@ export async function GET(request: NextRequest) {
     });
 
     if (!seasonWeek) {
-      return NextResponse.json({ files: [] }, { headers: CORS_HEADERS });
+      return NextResponse.json({ files: [], iracingFolderName: null }, { headers: CORS_HEADERS });
     }
 
     const listings = await prisma.setupListing.findMany({
       where: { seasonWeekId: seasonWeek.id, trackId, carId },
-      select: { url: true, shop: { select: { name: true } } },
+      select: {
+        url: true,
+        shop: { select: { name: true } },
+        car: { select: { name: true } },
+      },
       orderBy: { shopId: "asc" },
     });
+
+    // Resolve the car's iRacing folder from the first listing (all share the same car).
+    const carName = listings[0]?.car.name ?? null;
+    const iracingFolderName = carName ? lookupIracingFolder(carName) : null;
 
     const result = await Promise.all(
       listings.map(async (listing) => {
@@ -145,7 +154,7 @@ export async function GET(request: NextRequest) {
       }),
     );
 
-    return NextResponse.json({ files: result }, { headers: CORS_HEADERS });
+    return NextResponse.json({ files: result, iracingFolderName }, { headers: CORS_HEADERS });
   } catch (err) {
     console.error("[picker/files] error:", (err as Error).message);
     return NextResponse.json(
