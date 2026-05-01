@@ -2192,3 +2192,39 @@ Format per entry:
 **Open:**
 - Production prerequisites for team-deployment: set `HYMO_EMAIL` + `HYMO_PASSWORD` on Railway; verify `unzip` in Alpine runner image (may be present transitively from r7's `apk add chromium`).
 - `HYMO_PASSWORD` rotation still pending (appeared in chat in round 28).
+
+### 2026-05-01 22:48 — team-deployment (round 30)
+**Task:** Set HYMO secrets on Railway; commit + push round-30 HYMO file-download pipeline + bridge v0.3.0; deploy to Railway; tag bridge-v0.3.0; wait for GitHub Actions MSI build; update /releases page; second deploy.
+**Commits:**
+- `ab17fe1` — "feat(round 30): HYMO file-download pipeline + bridge v0.3.0" (13 files, 740 insertions)
+- `3ebe383` — "docs(round 30): /releases lists bridge-v0.3.0" (1 file, 13 insertions)
+**Pushed to:** origin/main @ 3ebe383
+**PR:** n/a
+**Deploy:** railway up → f9446263-b44b-4498-8a50-2a5dcb0e18a3 → success (web + HYMO routes); railway up → e1bb786b-5281-414e-bf4e-d19617df33f9 → success (/releases page)
+**Build time:** ~75s each
+**Healthcheck:** pass (200 OK on /, /compare, /api/ingest 405, /api/files/hymo/1474 401 unauthed → 200 authed)
+**Phase 1 — HYMO secrets:**
+- `HYMO_EMAIL` set on Railway via `railway variables --set "HYMO_EMAIL=..."  --skip-deploys`. Name verified via `railway variables -k | grep HYMO_`.
+- `HYMO_PASSWORD` set same pattern. Both present (names only logged here, values never printed).
+- `unzip` confirmed at `/usr/bin/unzip` in Alpine runner via `railway run which unzip` — came in as a transitive dep of r7's `apk add chromium`. No Dockerfile change needed.
+**Phase 2 — HYMO routes verified in production:**
+- Auth gate: `GET /api/files/hymo/1474` without creds → 401. PASS.
+- Cache miss: authed manifest call → 200 in 7.2s, `cached: false`, 10 files listed (9× `.sto` + 1× `.blap` + 1× `.rpy`). PASS.
+- Cache hit: second manifest call → 200 in 113ms, `cached: true`. PASS.
+- ZIP route: `GET /api/files/hymo/1474/zip` → 200, 4.9 MB, `unzip -l` confirmed 10 files valid. PASS.
+- Module-scope token cache confirmed active: `[hymo-auth] using cached token (expires in 3000s)` in logs; login fires fresh on next 50-min rotation.
+**Phase 3 — bridge-v0.3.0 GitHub Actions build:**
+- Tag `bridge-v0.3.0` pushed; Actions run `25234837124` triggered (Build Windows MSI job).
+- Completed: success. Wallclock ~13 min.
+- Release assets: `iRacing.Setup.Bridge_0.3.0_x64_en-US.msi` (3,280,896 bytes) + `latest.json` (771 bytes). Asset name uses DOTS — round-27-fix invariant preserved. PASS.
+- `/api/latest-bridge` → `version: "0.3.0"`, URL `https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/iRacing.Setup.Bridge_0.3.0_x64_en-US.msi`. PASS.
+- Asset proxy: `HEAD /api/bridge-asset/iRacing.Setup.Bridge_0.3.0_x64_en-US.msi` → 200 `application/octet-stream`. PASS.
+**Phase 4 — /releases page:**
+- `FALLBACK_RELEASES` array prepended with v0.3.0 entry (sizeBytes=3280896, actual from release).
+- Committed `3ebe383`, pushed, second Railway deploy triggered and succeeded.
+- `/releases` page 200 (live GITHUB_TOKEN path serves from API; ISR cache invalidates within 5 min).
+**Logs after deploy (60s window):** clean — no errors, no Chromium crashes, HYMO token-cache logs visible, no restart cycles.
+**Open:**
+- `HYMO_PASSWORD` rotation still pending (leaked in chat round 28). Rotate `.env` + Railway simultaneously before next user-visible password-reset event.
+- `/releases` ISR cache shows v0.2.1 until the 5-min TTL expires; FALLBACK_RELEASES is correct for any Railway redeploy that drops GITHUB_TOKEN.
+- Round 31 backlog: mobile UI for 5-column table (round-10 carry-over, now urgent); `Oval` class label cleanup (MG NASCAR); VRS decision + creds.
