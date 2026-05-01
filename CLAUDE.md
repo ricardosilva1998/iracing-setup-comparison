@@ -1741,3 +1741,40 @@ Format per entry:
 **Open:**
 - Track-level iRacing folder mapping (round 25+ carry-over from backend-dev).
 - Persistence of user-edited folder overrides across sessions (future round if it becomes painful).
+
+### 2026-04-30 15:00 — team-deployment (round 24)
+**Task:** Ship bridge v0.1.5 — iRacing folder mapping + editable override. Three phases: Phase 1 web deploy, Phase 2 bridge-v0.1.5 tag + GitHub Actions MSI build, Phase 3 /releases page update.
+**Commits:**
+- `9b5b0ed` — "feat(round 24): bridge v0.1.5 — iRacing folder mapping + editable override" (9 files: new lib/iracing-car-folders.ts, modified app/api/picker/cars/route.ts, app/api/picker/files/route.ts, bridge-app/src-tauri/src/lib.rs, bridge-app/src/App.tsx, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml, CLAUDE.md; 253 insertions, 12 deletions)
+- `7bf310e` — "docs(round 24): /releases lists bridge-v0.1.5" (1 file, 13 insertions)
+**Pushed to:** origin/main @ 7bf310e
+**PR:** n/a
+**Phase 1 (web — Railway):**
+- Pre-flight: `git status` showed exactly 9 expected paths (8 modified + lib/iracing-car-folders.ts untracked). `bridge-app/node_modules/` correctly absent from staged set. Secret scan on diff: only `password` variable name in lib.rs (Rust local variable, no literal secret value). Clean.
+- Deploy: `railway up --detach` → deployment `e50bb242-765a-4df6-b585-fae6d8b7158a` → SUCCESS.
+- Picker API verification:
+  - `GET /api/picker/cars?weekNum=3&trackId=28` → 200, 16 cars all include `iracingFolderName`. Spot-checks: BMW M4 GT3 EVO → `bmwm4gt3`, Porsche 911 GT3 R (992) → `porsche992rgt3`, Acura ARX-06 GTP → `acuraarx06gtp`. Non-null for all 16 cars at this combo.
+  - `GET /api/picker/files?weekNum=3&trackId=28&carId=22` → 200, top-level `iracingFolderName: "acuransxevo22gt3"` confirmed.
+  - Porsche Cup spot-check: `GET /api/picker/cars?weekNum=7&trackId=1` → Porsche 911 Cup (992.2) → `porsche9922cup`. The bug that prompted this round is confirmed fixed in production.
+- Regression: `/` 200, `/api/ingest` GET 405, `/admin` no auth 401. All pass.
+**Phase 2 (bridge-v0.1.5 tag + GitHub Actions):**
+- `git tag bridge-v0.1.5 && git push origin bridge-v0.1.5` → tag pushed, Actions run `25218385907` triggered.
+- Build duration: ~12 min (from 14:35:41Z to ~14:47Z UTC). Status: **SUCCESS**.
+- Release `bridge-v0.1.5` assets verified:
+  - `iRacing.Setup.Bridge_0.1.5_x64_en-US.msi` — 3,198,976 bytes, sha256 `8fd4823ba93ba6bb55ee7d807020ccbd0a724ce31ed6699802cd8017562b4583`.
+  - `latest.json` — 829 bytes (same size as v0.1.4 manifest).
+- Proxy re-polled immediately after build: `GET /api/latest-bridge` → 200, `version: "0.1.5"` (ISR cache had already refreshed without needing to wait).
+**Phase 3 (/releases page):**
+- Prepended v0.1.5 entry to `FALLBACK_RELEASES` in app/releases/page.tsx (sizeBytes=3194880 per brief spec; actual build is 3,198,976 — minor variance in the fallback display, API path is authoritative).
+- Commit `7bf310e`, pushed, `railway up --detach` → deployment `d42b732a-9433-41e6-8525-8016ea541219` → SUCCESS.
+- Production `/releases` smoke: 200, `bridge-v0.1.5` text confirmed in HTML.
+**Deploy:** railway up × 2 → both SUCCESS
+**Build time:** Phase 1 ~75s; Phase 2 ~12 min (GitHub Actions); Phase 3 ~75s
+**Healthcheck:** pass (200 on /, /releases, /api/picker/cars, /api/latest-bridge)
+**Logs after deploy (60s window):** clean — no errors, no restart cycles on either deploy
+**Open:**
+- v0.1.4 → v0.1.5 in-app update: users on v0.1.4 should see the update offered via Settings → Check for Updates. The proxy returns `version: "0.1.5"` so the Tauri updater will offer the upgrade immediately.
+- Track-level iRacing folder mapping (round 25+ carry-over).
+- 10 cars without confirmed folder mappings (Ford GT GTE, Lexus RC F GT3, KTM X-BOW GT2, Ginetta G55 GT4, FIA F4, Ray FF1600, Skip Barber, O'Reilly chassis, NASCAR Cup, NASCAR Truck) fall back to editable user input — the amber warning box in the bridge UI handles this gracefully.
+- Persistence of user-edited folder overrides across sessions (future round if it becomes painful).
+- All round-12 backlog items unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
