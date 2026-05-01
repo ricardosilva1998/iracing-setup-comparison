@@ -1482,3 +1482,20 @@ Format per entry:
 **Bugs found:** none.
 **Open:** Production deployment not performed this round (no team-deployment in scope). Round-21 `formatLapTime`/`formatPrice` duplication carry-over unchanged. All round-12 backlog items unchanged.
 - ZIP shares the same cache TTL as individual file routes (`private, max-age=3600`); no independent invalidation mechanism.
+
+### 2026-04-30 15:30 — team-deployment (round 22a)
+**Task:** Commit + push round-22a (Porsche alias merge + ZIP route + visual cues); Railway deploy; HYMO ingest to apply migration; full production healthcheck.
+**Commits:** `d6dc496` — "feat(round 22a): porsche cup merge + ZIP download route + clickable-row cues"
+**Pushed to:** origin/main @ d6dc496
+**PR:** n/a
+**Deploy:** railway up → d6698780-cf23-4dbf-ab77-a735a9adbd24 → success
+**Build time:** ~6 min (archiver dep install + Chromium Alpine build)
+**Healthcheck:** pass (200 OK on /)
+**Logs after deploy (60s window):** clean — volume mounted, Ready in 0ms, Next.js 16.2.4, HYMO scraper ran idempotently (inserted=0 updated=398 errors=0), ZIP cache hit logged for b4SgQqqz5q_V
+**Open:**
+- Porsche merge applied: `cars: { inspected:119, orphansFound:1, listingsRepointed:10, orphansDeleted:1 }` — `Porsche 992` orphan row collapsed into `Porsche 911 Cup (992.2)`, 10 listings repointed.
+- ZIP route production smoke: no-auth → 401; with round-18 admin creds → 200, 7.4 MB, 10 files (8× .sto + 1× .rpy + 1× .blap). `unzip -l` verified.
+- Visual cues on /week/3/track/28?carClass=GT3: 20 `→` chevrons + 120 `text-blue-300` occurrences confirmed in production HTML.
+- Car detail /week/3/track/28/car/3: "Open setup" 10x, "Browse setup files" 2x, "Download all" 2x, zip href 2x — all present.
+- All regression checks pass: /compare → 307, /?weekNum=3&carClass=GT3 → 307, /admin no-auth → 401, /admin with creds → 200, /api/ingest GET → 405, POST no bearer → 401.
+- Round-12 backlog items (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint) all unchanged.
