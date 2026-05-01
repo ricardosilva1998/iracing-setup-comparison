@@ -79,7 +79,7 @@ export async function GET() {
   }
 
   let release: {
-    assets?: Array<{ name: string; browser_download_url: string }>;
+    assets?: Array<{ name: string; url: string; browser_download_url: string }>;
   };
   try {
     release = await releaseRes.json();
@@ -97,10 +97,13 @@ export async function GET() {
   }
 
   // Fetch the actual latest.json content from the release asset.
+  // Private-repo assets: use asset.url (api.github.com path) with
+  // Accept: application/octet-stream — browser_download_url returns 404
+  // without a browser session even with a valid token.
   let manifestRes: Response;
   try {
-    manifestRes = await fetch(asset.browser_download_url, {
-      headers: ghHeaders,
+    manifestRes = await fetch(asset.url, {
+      headers: { ...ghHeaders, Accept: "application/octet-stream" },
       next: { revalidate: 60 },
     });
   } catch {
