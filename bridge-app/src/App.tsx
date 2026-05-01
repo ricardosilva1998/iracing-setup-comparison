@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useEffect, useState } from "react";
@@ -111,6 +112,17 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
     }
   }
 
+  async function handleBrowseRoot() {
+    const picked = await openDialog({
+      directory: true,
+      multiple: false,
+      defaultPath: iracingRoot || undefined,
+    });
+    if (typeof picked === "string" && picked.length > 0) {
+      setIracingRoot(picked);
+    }
+  }
+
   async function handleCheckForUpdates() {
     setUpdateState("checking");
     setUpdateMessage(null);
@@ -157,13 +169,18 @@ function SettingsScreen({ initial, onSuccess }: SettingsScreenProps) {
 
         <label style={styles.label}>
           iRacing Setups Root
-          <input
-            style={styles.input}
-            type="text"
-            value={iracingRoot}
-            onChange={(e) => setIracingRoot(e.target.value)}
-            placeholder="%USERPROFILE%\Documents\iRacing\setups\"
-          />
+          <div style={styles.inputRow}>
+            <input
+              style={{ ...styles.input, flex: 1 }}
+              type="text"
+              value={iracingRoot}
+              onChange={(e) => setIracingRoot(e.target.value)}
+              placeholder="%USERPROFILE%\Documents\iRacing\setups\"
+            />
+            <button style={styles.browseButton} type="button" onClick={handleBrowseRoot}>
+              Browse…
+            </button>
+          </div>
         </label>
 
         <label style={styles.label}>
@@ -335,6 +352,20 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
       .finally(() => setLoadingFiles(false));
   }, [weekNum, trackId, carId]);
 
+  async function handleBrowseFolder() {
+    const picked = await openDialog({
+      directory: true,
+      multiple: false,
+      defaultPath: settings.iracingRoot || undefined,
+    });
+    if (typeof picked === "string" && picked.length > 0) {
+      const segments = picked.split(/[\\/]/).filter(Boolean);
+      const basename = segments[segments.length - 1] ?? picked;
+      setCurrentIracingFolder(basename);
+      setFolderError(null);
+    }
+  }
+
   async function handleDownload(shopFile: ShopFiles, carName: string, trackName: string) {
     if (!shopFile.datapackId) return;
     const trimmedFolder = currentIracingFolder.trim();
@@ -468,20 +499,25 @@ function PickerScreen({ settings, onOpenSettings }: PickerScreenProps) {
             <label style={styles.folderLabel} htmlFor="iracing-folder-input">
               iRacing folder
             </label>
-            <input
-              id="iracing-folder-input"
-              style={folderError ? { ...styles.input, borderColor: COLOR.red } : styles.input}
-              type="text"
-              value={currentIracingFolder}
-              onChange={(e) => {
-                setCurrentIracingFolder(e.target.value);
-                if (e.target.value.trim()) setFolderError(null);
-              }}
-              placeholder="e.g. porsche9922cup"
-              spellCheck={false}
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
+            <div style={styles.inputRow}>
+              <input
+                id="iracing-folder-input"
+                style={folderError ? { ...styles.input, borderColor: COLOR.red, flex: 1 } : { ...styles.input, flex: 1 }}
+                type="text"
+                value={currentIracingFolder}
+                onChange={(e) => {
+                  setCurrentIracingFolder(e.target.value);
+                  if (e.target.value.trim()) setFolderError(null);
+                }}
+                placeholder="e.g. porsche9922cup"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+              <button style={styles.browseButton} type="button" onClick={handleBrowseFolder}>
+                Browse…
+              </button>
+            </div>
             {folderError && (
               <span style={styles.folderErrorText}>{folderError}</span>
             )}
@@ -966,6 +1002,23 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     alignSelf: "flex-start",
   },
+  inputRow: {
+    display: "flex",
+    gap: "0.5rem",
+    alignItems: "center",
+  },
+  browseButton: {
+    backgroundColor: COLOR.surface,
+    color: COLOR.text,
+    border: `1px solid ${COLOR.border}`,
+    borderRadius: 6,
+    padding: "0.5rem 0.75rem",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+  } as React.CSSProperties,
   updateSection: {
     marginTop: "0.5rem",
     display: "flex",

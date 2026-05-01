@@ -1815,3 +1815,33 @@ Format per entry:
 - v0.1.5 → v0.1.6 is a **manual install** — v0.1.5's updater button is the very thing being fixed; it cannot self-update to v0.1.6. Users on v0.1.5 must download the MSI manually from the /releases page or the GitHub release. From v0.1.6 onwards the in-app Check for Updates button should work for all future versions.
 - The Tauri ACL validator error message was highly informative — it listed all valid permission identifiers. This is the canonical source of truth for future capability configs.
 - All round-12 backlog items unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
+
+### 2026-04-30 13:00 — backend-dev (round 25)
+**Task:** Wire `tauri-plugin-dialog` so frontend can open a native Windows folder picker (Browse button for Settings iRacing root + Picker iRacing folder).
+**Files:** bridge-app/src-tauri/Cargo.toml, bridge-app/src-tauri/src/lib.rs, bridge-app/src-tauri/capabilities/default.json, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/package-lock.json
+**Decisions:**
+- Added `tauri-plugin-dialog = "2"` to Rust dependencies in Cargo.toml and registered `.plugin(tauri_plugin_dialog::init())` as the first plugin in the builder chain in lib.rs.
+- Installed `@tauri-apps/plugin-dialog@^2.7.0` JS package (npm install); confirmed in package.json + package-lock.json.
+- Added `"dialog:allow-open"` to the capabilities permissions array in default.json — 5-permission list confirmed valid via python3 JSON parse.
+- Bumped version 0.1.6 → 0.1.7 in all three canonical locations (package.json, tauri.conf.json, Cargo.toml).
+- `npx tsc --noEmit` → clean. No frontend code touched.
+**Open:**
+- frontend-dev must import `open` from `@tauri-apps/plugin-dialog` and call `open({ directory: true, multiple: false, defaultPath: ... })`. Returns `string | null`.
+- Settings Browse: store the returned absolute path verbatim into the iracing_root field.
+- Picker Browse: `picked.split('\\').pop()` (or platform-safe split) to extract the basename into the editable folder input.
+- `cargo check` not run (no Rust toolchain on Mac); GitHub Actions build on tag push is the gate.
+- No tag pushed — team-deployment owns that after frontend-dev UI work.
+
+### 2026-04-30 13:00 — frontend-dev (round 25)
+**Task:** Add native folder-picker Browse buttons to Settings (iRacing Setups Root) and Picker (iRacing folder) using `@tauri-apps/plugin-dialog`.
+**Files:** bridge-app/src/App.tsx
+**Decisions:**
+- Added `import { open as openDialog } from "@tauri-apps/plugin-dialog"` at the top of App.tsx (aliased to avoid collision with the browser `open` global).
+- `handleBrowseRoot` in SettingsScreen: calls `openDialog({ directory: true, multiple: false, defaultPath: iracingRoot || undefined })`; stores the returned absolute path verbatim into `setIracingRoot`. Cancel (`null` return) is a no-op.
+- `handleBrowseFolder` in PickerScreen: calls `openDialog({ directory: true, multiple: false, defaultPath: settings.iracingRoot || undefined })`; splits the result on `/[\\/]/` and extracts the basename (last segment) into `setCurrentIracingFolder`; clears `folderError`. Cancel is a no-op.
+- Both inputs wrapped in a new `styles.inputRow` flex-row so the input stretches (`flex: 1`) and the Browse button sits inline at the right edge.
+- Added `styles.inputRow` (flex, gap 0.5rem) and `styles.browseButton` (matches the secondary button aesthetic but with tighter padding and `whiteSpace: nowrap`) to the inline styles block. No new dependencies, no version bumps.
+- `npx tsc --noEmit` → clean. `npm run lint` (root) → clean.
+**Open:**
+- Browse buttons will throw/no-op in a Vite browser dev session (dialog plugin only works inside the Tauri runtime). GitHub Actions Windows build is the real gate.
+- team-deployment can tag and push to trigger the Windows build once confirmed.
