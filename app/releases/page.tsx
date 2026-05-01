@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.1.6",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.1.6_x64_en-US.msi",
+        sizeBytes: 3207168,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.6/iRacing.Setup.Bridge_0.1.6_x64_en-US.msi",
+      },
+    ],
+    body: "Round 24-fix: Tauri v2 capability grants for the updater + process plugins. Fixes 'command plugin:updater|check not allowed by ACL' from v0.1.5. From v0.1.6 onwards the in-app Check for Updates button works.",
+  },
+  {
     tagName: "bridge-v0.1.5",
     publishedAt: "2026-04-30",
     assets: [
