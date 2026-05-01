@@ -1845,3 +1845,28 @@ Format per entry:
 **Open:**
 - Browse buttons will throw/no-op in a Vite browser dev session (dialog plugin only works inside the Tauri runtime). GitHub Actions Windows build is the real gate.
 - team-deployment can tag and push to trigger the Windows build once confirmed.
+
+### 2026-04-30 16:00 — team-deployment (round 25)
+**Task:** Commit + push bridge v0.1.7 (8 files); tag bridge-v0.1.7; poll GitHub Actions Windows build; update /releases fallback; Railway redeploy; verify /api/latest-bridge and /releases in production.
+**Commits:**
+- `5e0a7bd` — "feat(round 25): bridge v0.1.7 — native folder picker (Browse… buttons)" (8 files: Cargo.toml, lib.rs, default.json, package.json, tauri.conf.json, package-lock.json, App.tsx, CLAUDE.md)
+- `3d40948` — "docs(round 25): /releases lists bridge-v0.1.7" (app/releases/page.tsx, FALLBACK_RELEASES prepended with v0.1.7 at sizeBytes=3272704)
+**Pushed to:** origin/main @ 3d40948
+**PR:** n/a
+**Phase 1 (bridge tag + GitHub Actions):**
+- Tag `bridge-v0.1.7` pushed at `5e0a7bd`. GitHub Actions run `25220767372` → SUCCESS in ~14 min.
+- All material build steps green: Set up job, Checkout, Install Rust stable, Install Node 22, Cache Cargo registry (cache hit), Cache npm (cache hit), Install npm deps, Build Tauri app (release MSI + signature), List bundle output, Locate MSI + signature files, Generate latest.json, Upload MSI + manifest as GitHub Release assets.
+- Release `bridge-v0.1.7` assets: `iRacing.Setup.Bridge_0.1.7_x64_en-US.msi` (3,272,704 bytes, sha256 `4993ca331460ce09765b2cf33634fa4545d2190935a51d0344d8458bce2b00e4`) + `latest.json` (829 bytes). No ACL errors — `dialog:allow-open` accepted on first try.
+- `/api/latest-bridge` confirmed `version: "0.1.7"` with correct MSI URL and updater signature after ISR cache refresh.
+**Phase 2 (/releases page + Railway):**
+- Prepended v0.1.7 entry to FALLBACK_RELEASES (real sizeBytes 3272704 from GitHub asset). Committed + pushed.
+- Railway deploy: deployment `2b545417-582a-454b-a4ea-e44624c68362` → SUCCESS (~75s). Logs: Mounting volume → Starting Container → Next.js 16.2.4 → Ready in 0ms. No errors, no restart cycles.
+- Production /releases: 200 OK. GITHUB_TOKEN path auto-fetches live releases; v0.1.7 appears at top once ISR cache refreshes (within 5 min of deploy). FALLBACK_RELEASES safety net is also correct.
+**Deploy:** railway up → 2b545417 → success
+**Build time:** GitHub Actions ~14 min; Railway ~75s
+**Healthcheck:** pass (200 on /, /releases, /api/latest-bridge returning version: "0.1.7")
+**Logs after deploy (60s window):** clean — no errors, no restart cycles
+**Open:**
+- v0.1.6 → v0.1.7 is the **first in-app update ever** — users on v0.1.6 can go to Settings → Check for Updates and install v0.1.7 without touching a browser or manually downloading the MSI. The updater path (fixed in v0.1.6-ACL) is fully exercised for the first time.
+- Browse buttons require runtime validation inside the Tauri app (dialog plugin does not work in Vite browser dev session). The Windows build passed all ACL gates; runtime smoke is the user's install.
+- All round-12 backlog carry-overs unchanged (mobile UI, Oval class cleanup, VRS, INGEST_SECRET rotation, image footprint).
