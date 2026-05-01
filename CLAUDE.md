@@ -1608,3 +1608,22 @@ Format per entry:
 - `GITHUB_TOKEN=` placeholder added to `.env.example` with a comment describing the required scope (fine-grained, read-only Contents).
 - `/releases` route remains `○ (Static)` in the build (fallback path prerendered). Lint (`tsc --noEmit`) and build green. Dev server smoke on port 3030 confirmed: v0.1.2 card renders, caveat banner present, `iRacing.Setup.Bridge_0.1.0_x64_en-US.msi` link in HTML exactly once.
 **Open:** Set `GITHUB_TOKEN` on Railway (via `railway variables --set`) when the user has a PAT ready — that switches the page to live auto-updating mode. Until then the fallback covers the current state.
+
+### 2026-04-30 12:35 — team-deployment (round 22c)
+**Task:** Commit + push round-22c `/releases` fallback fix; trigger Railway deploy; verify production /releases shows the v0.1.2 release card.
+**Files:** app/releases/page.tsx, .env.example, CLAUDE.md
+**Decisions:**
+- **Pre-flight:** `git status -uno` showed exactly 3 modified files (app/releases/page.tsx, .env.example, CLAUDE.md). No `.env`, `dev.db`, `node_modules`, `.next`, `tsconfig.tsbuildinfo`, `app/generated/`, `data/`, `bridge-app/dist/`, or `bridge-app/src-tauri/target/` in scope. Secret scan on staged diff: `GITHUB_TOKEN=` (empty placeholder in .env.example) -- no literal token value. Clean.
+- **Commit `09149d5`:** "feat(round 22c): /releases shows bridge-v0.1.2 (fallback + GitHub API)". 3 files changed, 235 insertions, 51 deletions. Pushed `937f005..09149d5` to origin/main. Push succeeded.
+- **Railway deploy triggered** via `railway up --detach`. Deployment id `eeb75de0-fcf3-404c-a515-d7d62d1cbe97`. Healthcheck on both `/` and `/releases` returned 200 within ~3 min of dispatch.
+- **Production /releases verified:**
+  - HTTP 200.
+  - "No bridge releases yet" empty state: **0 occurrences** (was the bug; now fixed).
+  - `bridge-v0.1.2` tag: **1 occurrence**.
+  - `iRacing.Setup.Bridge_0.1.0_x64_en-US.msi` download URL: **1 occurrence**.
+  - Caveat banner ("logged into GitHub"): **1 occurrence**.
+- **Regression checks all pass:** `/` 200, `/week/3` 200, `/week/3/track/28?carClass=GT3` 200, `/admin` 401, `/api/ingest` GET 405, `/api/picker/weeks` 200.
+- **Logs (~30s tail):** Mounting volume -> Starting Container -> Next.js 16.2.4 -> Ready in 0ms. No errors, no crashes.
+**Open:**
+- Set `GITHUB_TOKEN` on Railway when the user has a GitHub PAT ready (fine-grained, read-only Contents scope). That switches the page from fallback to live auto-updating mode (ISR every 5 min).
+- When a new bridge release ships: add a new entry at the top of `FALLBACK_RELEASES` in `app/releases/page.tsx` as a belt-and-suspenders backup.
