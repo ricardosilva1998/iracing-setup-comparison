@@ -90,16 +90,21 @@ jobs:
           SIG_CONTENT=$(cat "${{ steps.locate.outputs.sig }}")
           TAG="${GITHUB_REF_NAME:-bridge-v${VERSION}}"
           MSI_FILENAME=$(basename "${{ steps.locate.outputs.msi }}")
+          # Tauri outputs the MSI with spaces in the product name; softprops/action-gh-release
+          # renames the uploaded asset replacing spaces with dots. The manifest URL must match
+          # the renamed asset, not the local file path.
+          MSI_FILENAME_ON_RELEASE="${MSI_FILENAME// /.}"
+          NOTES="Bridge ${VERSION} — see /releases page for changelog."
 
           cat > latest.json <<EOF
           {
             "version": "${VERSION}",
-            "notes": "Round 23: in-app updater, white-border fix, localeCompare null guard, Check for Updates UI.",
+            "notes": "${NOTES}",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "windows-x86_64": {
                 "signature": "${SIG_CONTENT}",
-                "url": "https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/${MSI_FILENAME}"
+                "url": "https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/${MSI_FILENAME_ON_RELEASE}"
               }
             }
           }

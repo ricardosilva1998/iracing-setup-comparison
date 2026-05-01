@@ -2024,3 +2024,24 @@ Format per entry:
 - In-app updater (v0.1.9 → v0.2.0): `/api/latest-bridge` now reports 0.2.0; `latest.json` is on the release. Updater should prompt on next app launch for 0.1.9 users.
 - Bulk Download pipelines for HYMO/GO Setups/Majors Garage/P1Doks: each logs "Shop has no file pipeline" today — round 28 candidate.
 - Round 11 carry-overs (Mobile UI, `Oval` class cleanup, VRS, INGEST_SECRET rotation, image footprint) unchanged.
+
+### 2026-04-30 13:30 — backend-dev (round 27-fix)
+**Task:** Fix the spaces-vs-dots MSI filename bug in the update manifest so it does not recur on future tags; bump version to 0.2.1.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{.github/workflows/bridge-build.yml, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml}
+**Decisions:**
+- Root cause: `MSI_FILENAME=$(basename "${MSI}")` captured the local file path which uses spaces (Tauri outputs `iRacing Setup Bridge_*.msi`). `softprops/action-gh-release` renames the uploaded asset to dots on GitHub. Added `MSI_FILENAME_ON_RELEASE="${MSI_FILENAME// /.}"` immediately after the basename assignment and switched the `url` field in the `latest.json` heredoc to use `${MSI_FILENAME_ON_RELEASE}`. The local variable name change is self-documenting; a comment explains the rename behaviour.
+- Changed the hardcoded `"notes"` string to `NOTES="Bridge ${VERSION} — see /releases page for changelog."` so each release carries a version-specific note instead of the round-23 hardcoded text.
+- Bumped version to 0.2.1 in all three canonical locations: `bridge-app/package.json`, `bridge-app/src-tauri/tauri.conf.json`, `bridge-app/src-tauri/Cargo.toml`.
+- v0.2.0 manifest already manually patched in production — live URL confirmed ends in `.msi` (dots, no spaces).
+- `python3 -c "import yaml; yaml.safe_load(...)"` → YAML OK. `npm run lint` (root tsc --noEmit) → green. `npx tsc --noEmit` (bridge-app) → green.
+**Open:** team-deployment to commit + push + tag `bridge-v0.2.1` to trigger the release workflow and verify the new manifest URL uses dots.
+
+### 2026-04-30 — frontend-dev (round 27-fix)
+**Task:** Restore scrolling on Manage Folders screen — users could not scroll past the first visible rows.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/bridge-app/index.html
+**Decisions:**
+- Root cause: round 23's white-border CSS fix applied `overflow: hidden` to `html, body, #root` in a single rule, blocking all scroll at the OS and root-element level.
+- Applied Option B: split the rule so `html` and `body` keep `overflow: hidden` (preserves white-edge fix), while `#root` now gets `overflow-y: auto` + `overflow-x: hidden`. Scroll re-enabled for all screens without re-introducing the rogue scrollbar.
+- No TS, no Rust, no tauri.conf.json, no workflow files touched.
+- `npx tsc --noEmit` (bridge-app) → green.
+**Open:** none.
