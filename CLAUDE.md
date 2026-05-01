@@ -1562,3 +1562,27 @@ Format per entry:
 - `/api/picker/files` response key is `files` (not `entries` as described in brief). Frontend-dev should confirm bridge-app reads `files` key.
 - `invoke` calls in Vite browser preview fail as expected (no Rust backend in browser mode). Not a bug.
 - `/releases` GitHub API deferred until repo is public or GITHUB_TOKEN set (documented carry-over).
+
+### 2026-04-30 12:50 — team-deployment (round 22b)
+**Task:** Commit + push round-22b (picker APIs + /releases + bridge-app scaffold + Windows CI); Railway deploy; tag bridge-v0.1.0 + GitHub Actions build smoke.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{CLAUDE.md (this entry); all r22b code already staged by backend-dev/frontend-dev}
+**Decisions:**
+- **Pre-flight:** `git status -uno` showed exactly the expected files (3 modified: CLAUDE.md, app/layout.tsx, tsconfig.json; 4 untracked dirs: .github/workflows/bridge-build.yml, app/api/picker/, app/releases/, bridge-app/). No .env, dev.db, node_modules, .next, tsconfig.tsbuildinfo, or app/generated/ in the diff. Secrets scan on staged diff: all PASSWORD/SECRET/TOKEN hits are in CLAUDE.md activity-log prose from prior rounds, not new code values. Clean.
+- **Commit `d96f645`:** "feat(round 22b): bridge app scaffold + picker APIs + /releases page + Windows CI". 21 files changed, 4094 insertions, 1 deletion. New files: 4 picker API routes, app/releases/page.tsx, .github/workflows/bridge-build.yml, full bridge-app/ scaffold (11 source files). Modified: app/layout.tsx, tsconfig.json. Pushed `75ae220..d96f645` to origin/main.
+- **Railway deploy triggered** via `railway up --detach`. Deployment id `62cc1a89-4422-4735-919f-edad6dde53f1`. Status: SUCCESS.
+- **Production healthcheck (all pass):**
+  - `GET /` -> 200; "Bridge App" nav link confirmed in HTML.
+  - `GET /releases` -> 200; "iRacing Setup Bridge", "No bridge releases yet", `github.com` reference all present.
+  - `GET /api/picker/weeks` -> 200, 13 weeks with setupCount.
+  - `GET /api/picker/tracks?weekNum=3` -> 200, 45 tracks.
+  - `GET /api/picker/cars?weekNum=3&trackId=28` -> 200, 16 cars.
+  - `GET /api/picker/files?weekNum=3&trackId=28&carId=22` -> 200, 5 entries (GnG: datapackId=xHGoM2Zss6hQ, fileNames=10; HYMO/P1Doks/GO/MG: null/empty as expected).
+  - CORS: `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET, OPTIONS`, `Access-Control-Allow-Headers: Content-Type`. All present on picker endpoints.
+  - Regression: `/compare` 307; `/?weekNum=3&carClass=GT3` 307; `/api/ingest` GET 405; POST no bearer 401; `/admin` no auth 401. All pass.
+- **Phase 2: tag bridge-v0.1.0 pushed.** GitHub Actions run `25211023402` triggered against SHA `d96f645`. Run URL: https://github.com/ricardosilva1998/iracing-setup-comparison/actions/runs/25211023402. **Status: FAILURE.**
+- **GitHub Actions failure root cause:** `cargo metadata` failed with: `can't find library 'iracing_setup_bridge_lib', rename file to 'src/lib.rs' or specify lib.path`. The `bridge-app/src-tauri/Cargo.toml` declares a `[lib]` target named `iracing_setup_bridge_lib` but `bridge-app/src-tauri/src/lib.rs` was not created. backend-dev needs to add `src/lib.rs` (with the Tauri lib entrypoint: `#[cfg_attr(mobile, tauri::mobile_entry_point)] pub fn run() { ... }`) and update `Cargo.toml` accordingly. No .msi artifact produced this round.
+- **No rollback of Railway web deploy.** The web-side changes (picker APIs, /releases, nav link) are working correctly in production and unrelated to the Cargo failure. Only the Windows MSI build is blocked.
+**Open:**
+- **bridge-v0.1.0 tag exists** on the remote. Once backend-dev adds `src/lib.rs` and fixes Cargo.toml, a new tag `bridge-v0.1.1` should be pushed (the 0.1.0 release was never published, so bump the patch). The `.msi` artifact will be attached to the GitHub Release by the workflow.
+- `/releases` page currently shows "No bridge releases yet" -- correct until a successful build publishes a release. Once `bridge-v0.1.1` ships, the page needs to wire a GitHub Releases API call (or the user navigates directly via the GitHub link on the page).
+- All round-11 carry-overs unchanged (VRS, image footprint, etc).
