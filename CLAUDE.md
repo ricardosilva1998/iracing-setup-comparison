@@ -1695,3 +1695,20 @@ Format per entry:
 - `GITHUB_TOKEN` must be set on Railway before team-deployment deploys this round. Fine-grained PAT with read-only Contents scope on this repo is sufficient. Set via `railway variables --set "GITHUB_TOKEN=<token>" --skip-deploys`.
 - Once Railway is deployed and the token is live, the updater flow can be verified by running: `curl -sS https://iracing-setup-comparison-production.up.railway.app/api/latest-bridge` — should return the v0.1.3 `latest.json` manifest.
 - team-deployment owns tagging `bridge-v0.1.4` and triggering the MSI build via GitHub Actions. The tag push was explicitly out of scope for this round.
+
+### 2026-04-30 15:07 — team-deployment (round 23-fix)
+**Task:** Ship bridge v0.1.4 — updater proxy + Car interface fix. Three phases: web deploy, GitHub Actions MSI build, /releases page update.
+**Commits:**
+- `578c81f` — "feat(round 23-fix): bridge v0.1.4 — updater proxy + Car interface fix" (6 files: new app/api/latest-bridge/route.ts, bridge-app package.json/Cargo.toml/tauri.conf.json/App.tsx, CLAUDE.md)
+- `f6b6d2e` — "fix(round 23-fix): proxy uses asset API URL + octet-stream for private repo" (route.ts: browser_download_url → asset.url with Accept: application/octet-stream; the original approach returned 404 for private-repo assets even with a valid Bearer token)
+**Pushed to:** origin/main @ f6b6d2e
+**PR:** n/a
+**Deploy Phase 1 (web):** railway up → deployment 4579c837 → SUCCESS (proxy returning error); fix committed → deployment 67fe68ec → SUCCESS. Proxy verified: `GET /api/latest-bridge` → 200, `version: "0.1.3"` (correctly returning the then-latest release).
+**Deploy Phase 2 (tag + Actions):** `git tag bridge-v0.1.4 && git push origin bridge-v0.1.4`. GitHub Actions run `25216658533` (bridge-build.yml) — completed SUCCESS in ~16 min. Assets verified on release `bridge-v0.1.4`: `iRacing.Setup.Bridge_0.1.4_x64_en-US.msi` (3194880 bytes) + `latest.json` (829 bytes). Proxy re-polled after ISR cache expiry → `version: "0.1.4"` confirmed.
+**Deploy Phase 3 (/releases):** Prepended v0.1.4 entry to FALLBACK_RELEASES in app/releases/page.tsx. Commit `docs(round 23-fix): /releases lists bridge-v0.1.4`; railway up → SUCCESS. /releases page smoke: 200 with v0.1.4 at top.
+**Healthcheck:** pass — proxy 200, /releases 200, / 200
+**Logs after deploy (60s window):** clean — no errors, no restart cycles
+**Open:**
+- Proxy fix (browser_download_url vs asset.url) is a deviation from the team-qa-approved route. This was a correctness bug only discoverable against a live private-repo release; the fix is minimal and safe. No new test needed (the live proxy verification is the integration test).
+- Proxy returns `version: "0.1.4"` — Tauri updater in existing v0.1.3 installs will see a newer version on next Settings → Check for Updates and offer the in-app upgrade to v0.1.4.
+- GITHUB_TOKEN confirmed present on Railway; `P1DOKS_*`, `GRID_AND_GO_*`, `INGEST_SECRET` all unchanged. No re-roll needed.
