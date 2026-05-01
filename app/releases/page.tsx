@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.1.9",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.1.9_x64_en-US.msi",
+        sizeBytes: 3210000,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.9/iRacing.Setup.Bridge_0.1.9_x64_en-US.msi",
+      },
+    ],
+    body: "Round 26: Browse… picker now preserves the path relative to your iRacing Setups Root. Picking <root>/porsche9922cup/myfolder now yields the relative path porsche9922cup/myfolder (was just myfolder before — files landed in the wrong place). Edge cases: picking outside root falls back to basename with a hint; picking root itself shows an error.",
+  },
+  {
     tagName: "bridge-v0.1.8",
     publishedAt: "2026-04-30",
     assets: [
