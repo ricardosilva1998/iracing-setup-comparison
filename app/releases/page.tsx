@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.1.8",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.1.8_x64_en-US.msi",
+        sizeBytes: 3272704,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.8/iRacing.Setup.Bridge_0.1.8_x64_en-US.msi",
+      },
+    ],
+    body: "Round 25-fix: visible Windows installer (was hidden behind the app on v0.1.7 — that's why your Install hung). Download progress bar + 30s 'check the taskbar' hint after the installer launches.",
+  },
+  {
     tagName: "bridge-v0.1.7",
     publishedAt: "2026-04-30",
     assets: [
