@@ -1,6 +1,7 @@
 use anyhow::Context;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -43,6 +44,11 @@ struct DownloadArgs {
     /// car_slug. Falls back to slugify(car_slug) when None or empty — preserves
     /// the v0.1.4 contract so older callers that omit this field still work.
     iracing_folder_name: Option<String>,
+    /// Canonical car name from the server API (e.g. "Porsche 911 GT3 R (992)").
+    /// Used to look up a persisted folder override in car-folders.json when
+    /// iracing_folder_name is absent. Additive field — v0.1.x callers that omit
+    /// it continue to work unchanged.
+    car_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -208,6 +214,64 @@ mod tests {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Car folder override storage
+// ---------------------------------------------------------------------------
+
+const CAR_FOLDERS_FILE: &str = "car-folders.json";
+
+fn car_folders_path() -> Result<PathBuf, String> {
+    let mut p = dirs::config_dir().ok_or_else(|| "config dir unavailable".to_string())?;
+    p.push(CONFIG_DIR);
+    fs::create_dir_all(&p).map_err(|e| format!("create dir failed: {}", e))?;
+    p.push(CAR_FOLDERS_FILE);
+    Ok(p)
+}
+
+fn read_car_folders() -> Result<HashMap<String, String>, String> {
+    let path = car_folders_path()?;
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("read failed: {}", e))?;
+    serde_json::from_str::<HashMap<String, String>>(&text)
+        .map_err(|e| format!("parse failed: {}", e))
+}
+
+fn write_car_folders(map: &HashMap<String, String>) -> Result<(), String> {
+    let path = car_folders_path()?;
+    let text =
+        serde_json::to_string_pretty(map).map_err(|e| format!("serialise failed: {}", e))?;
+    fs::write(&path, text).map_err(|e| format!("write failed: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_car_folder_overrides() -> Result<HashMap<String, String>, String> {
+    read_car_folders()
+}
+
+#[tauri::command]
+fn save_car_folder_override(car_name: String, folder: String) -> Result<(), String> {
+    if car_name.trim().is_empty() {
+        return Err("empty car name".into());
+    }
+    // Validate the folder path via the existing traversal-safety helper.
+    let cleaned = safe_relative_path(&folder).map_err(|e| e.to_string())?;
+    let mut map = read_car_folders()?;
+    map.insert(car_name.trim().to_string(), cleaned);
+    write_car_folders(&map)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_car_folder_override(car_name: String) -> Result<(), String> {
+    let mut map = read_car_folders()?;
+    map.remove(car_name.trim());
+    write_car_folders(&map)?;
+    Ok(())
+}
+
 /// Load password for the fixed "admin" account from the OS keychain.
 fn load_credentials() -> anyhow::Result<String> {
     let entry = Entry::new(KEYRING_SERVICE, "admin")
@@ -354,15 +418,36 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
     let file = read_settings_file().map_err(|e| e.to_string())?;
     let password = load_credentials().map_err(|e| e.to_string())?;
 
-    // Determine the car-level folder name. When the caller supplies an iRacing-
-    // internal folder name (e.g. "porsche9922cup", "mx5 mx52016"), use it verbatim
-    // after a traversal-safety check. Fall back to slugifying car_slug so existing
-    // v0.1.4 callers that omit iracing_folder_name continue to work unchanged.
-    let car_folder = match args.iracing_folder_name.as_deref() {
-        Some(name) if !name.trim().is_empty() => {
+    // Determine the car-level folder name. Priority order:
+    //   1. Caller-supplied iracing_folder_name (highest — frontend explicit choice).
+    //   2. Persisted override for the canonical car_name in car-folders.json.
+    //   3. Slugify car_slug (existing fallback; preserves v0.1.x contract).
+    let car_folder = if let Some(name) = args.iracing_folder_name.as_deref() {
+        if !name.trim().is_empty() {
             safe_relative_path(name.trim()).map_err(|e| e.to_string())?
+        } else {
+            // Empty string supplied — fall through to override / slug.
+            let override_folder = args
+                .car_name
+                .as_deref()
+                .filter(|n| !n.trim().is_empty())
+                .and_then(|n| read_car_folders().ok()?.remove(n.trim()));
+            match override_folder {
+                Some(f) => f,
+                None => safe_segment(&args.car_slug).map_err(|e| e.to_string())?,
+            }
         }
-        _ => safe_segment(&args.car_slug).map_err(|e| e.to_string())?,
+    } else {
+        // iracing_folder_name absent — check persisted overrides before slugifying.
+        let override_folder = args
+            .car_name
+            .as_deref()
+            .filter(|n| !n.trim().is_empty())
+            .and_then(|n| read_car_folders().ok()?.remove(n.trim()));
+        match override_folder {
+            Some(f) => f,
+            None => safe_segment(&args.car_slug).map_err(|e| e.to_string())?,
+        }
     };
     let season_label = safe_segment(&args.season_label).map_err(|e| e.to_string())?;
     let track_slug = safe_segment(&args.track_slug).map_err(|e| e.to_string())?;
@@ -481,6 +566,9 @@ pub fn run() {
             test_connection,
             fetch_picker,
             download_setups,
+            get_car_folder_overrides,
+            save_car_folder_override,
+            clear_car_folder_override,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
