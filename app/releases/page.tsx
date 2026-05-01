@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.1.5",
+    publishedAt: "2026-04-30",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.1.5_x64_en-US.msi",
+        sizeBytes: 3194880,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.1.5/iRacing.Setup.Bridge_0.1.5_x64_en-US.msi",
+      },
+    ],
+    body: "Round 24: iRacing folder mapping (39 cars) — files now land in the correct iRacing setup folder (e.g. porsche9922cup, not porsche-911-cup-9922). Editable folder input pre-filled with the mapped value; manual override available for cars without a confirmed mapping. Update via Settings → Check for Updates if you're already on v0.1.4.",
+  },
+  {
     tagName: "bridge-v0.1.4",
     publishedAt: "2026-04-30",
     assets: [
