@@ -66,5 +66,5 @@ CMD sh -c '\
     echo "[boot] $TARGET already populated; preserving"; \
   fi; \
   echo "[boot] applying schema to $TARGET"; \
-  DATABASE_PATH="$TARGET" npx prisma db push --accept-data-loss --skip-generate; \
+  DATABASE_PATH="$TARGET" npx --yes prisma db push --accept-data-loss --skip-generate; \
   exec node server.js'
