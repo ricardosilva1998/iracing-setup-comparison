@@ -1597,3 +1597,14 @@ Format per entry:
 **Open:**
 - All round-11 carry-overs unchanged (VRS, image footprint, etc).
 - The `/releases` page in production currently shows "No bridge releases yet" — it may need wiring to the GitHub Releases API to surface this asset automatically. Manual direct link works in the meantime.
+
+### 2026-04-30 13:15 — frontend-dev (round 22c)
+**Task:** Fix `/releases` showing "No bridge releases yet" by implementing a two-tier data strategy: live GitHub Releases API (when `GITHUB_TOKEN` is set) with a hardcoded fallback for `bridge-v0.1.2`.
+**Files:** app/releases/page.tsx, .env.example
+**Decisions:**
+- `app/releases/page.tsx` converted from a sync server component (empty-state only) to an `async` server component. `getReleases()` tries the GitHub API first (ISR `revalidate: 300`); on non-OK response or missing token it falls back to `FALLBACK_RELEASES`. Filter: only `bridge-v*` tags with at least one `.msi` asset are shown.
+- `FALLBACK_RELEASES` hardcoded with `bridge-v0.1.2` entry (published 2026-04-30, asset `iRacing.Setup.Bridge_0.1.0_x64_en-US.msi`, download URL pointing to the `bridge-v0.1.2` release tag). A comment in the file explains how to add entries for future releases.
+- Each release renders a card: tag name + date, first 200 chars of body, one download `<a>` per `.msi` asset (name + size in MB). Caveat banner above the cards ("repo is private, log into GitHub first"). Footer note explains the `GITHUB_TOKEN` / fallback distinction.
+- `GITHUB_TOKEN=` placeholder added to `.env.example` with a comment describing the required scope (fine-grained, read-only Contents).
+- `/releases` route remains `○ (Static)` in the build (fallback path prerendered). Lint (`tsc --noEmit`) and build green. Dev server smoke on port 3030 confirmed: v0.1.2 card renders, caveat banner present, `iRacing.Setup.Bridge_0.1.0_x64_en-US.msi` link in HTML exactly once.
+**Open:** Set `GITHUB_TOKEN` on Railway (via `railway variables --set`) when the user has a PAT ready — that switches the page to live auto-updating mode. Until then the fallback covers the current state.
