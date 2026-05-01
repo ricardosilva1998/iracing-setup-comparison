@@ -1585,4 +1585,16 @@ Format per entry:
 **Open:**
 - **bridge-v0.1.0 tag exists** on the remote. Once backend-dev adds `src/lib.rs` and fixes Cargo.toml, a new tag `bridge-v0.1.1` should be pushed (the 0.1.0 release was never published, so bump the patch). The `.msi` artifact will be attached to the GitHub Release by the workflow.
 - `/releases` page currently shows "No bridge releases yet" -- correct until a successful build publishes a release. Once `bridge-v0.1.1` ships, the page needs to wire a GitHub Releases API call (or the user navigates directly via the GitHub link on the page).
+
+### 2026-04-30 13:00 — backend-dev (round 22b fix)
+**Task:** Fix Rust compile failure from bridge-v0.1.0 GH Actions run by splitting Tauri code into `lib.rs` + `main.rs` shim per Tauri v2 idiom.
+**Files:** bridge-app/src-tauri/src/lib.rs (new), bridge-app/src-tauri/src/main.rs (rewritten to shim)
+**Decisions:**
+- Root cause: `Cargo.toml` declares `[lib] name = "iracing_setup_bridge_lib"` but no `src/lib.rs` existed. Rust resolves `[lib]` to `src/lib.rs` by convention (no explicit `path =`). `cargo metadata` failed before any compilation.
+- Created `bridge-app/src-tauri/src/lib.rs` containing all types, helpers, `#[tauri::command]` functions, and a `pub fn run()` that wires the Tauri builder. Exact port of what was in `main.rs` — no logic changes.
+- Replaced `main.rs` with the standard 5-line Tauri v2 shim: `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` + `fn main() { iracing_setup_bridge_lib::run() }`.
+- `Cargo.toml` unchanged — `[lib]` + `[[bin]]` sections were already correct; the missing file was the only problem.
+- `cargo check` not run locally (Rust not installed on Mac); GitHub Actions Windows runner is the gate.
+- Tag `bridge-v0.1.1` pushed to trigger the workflow.
+**Open:** GitHub Actions run outcome pending — update this entry once the run completes.
 - All round-11 carry-overs unchanged (VRS, image footprint, etc).
