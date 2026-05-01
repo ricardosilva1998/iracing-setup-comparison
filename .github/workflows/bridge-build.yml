@@ -99,7 +99,7 @@ jobs:
             "platforms": {
               "windows-x86_64": {
                 "signature": "${SIG_CONTENT}",
-                "url": "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/${TAG}/${MSI_FILENAME}"
+                "url": "https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/${MSI_FILENAME}"
               }
             }
           }

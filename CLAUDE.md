@@ -1953,3 +1953,14 @@ Format per entry:
 **Open:**
 - Cargo unit tests (8 new tests in `safe_relative_path`) are not executed by the CI workflow — they run correctly locally with `cargo test` but the workflow only does `tauri build`. If a future round wants test gating in CI, add a `cargo test --manifest-path bridge-app/src-tauri/Cargo.toml` step before the tauri build step.
 - All round-12 carry-overs unchanged (Oval class dropdown, VRS, INGEST_SECRET rotation, image footprint).
+
+### 2026-04-30 — backend-dev (round 26-fix)
+**Task:** Fix Tauri updater "install failed: 404" — proxy the MSI binary through the server (same pattern as the manifest proxy in round 23-fix).
+**Files:** app/api/bridge-asset/[filename]/route.ts (new), .github/workflows/bridge-build.yml (url field), bridge-v0.1.9 latest.json re-uploaded via gh CLI
+**Decisions:**
+- **Root cause confirmed:** `/api/latest-bridge` correctly returned the manifest, but the `url` inside it pointed directly to `github.com/releases/download/...` which returns 404 for unauthenticated requests against a private repo. Tauri verifies the signature on the binary, so no auth is needed from the updater's perspective — the auth lives server-side.
+- **New route `app/api/bridge-asset/[filename]/route.ts`:** `force-dynamic`, CORS `*`. Filename validated against `^[a-zA-Z0-9._\- ]+\.(msi|sig|exe|zip)$` plus explicit `..`/`/`/`\` rejection (path traversal guard). Resolves asset by name: tries `releases/latest` first, falls back to `releases?per_page=20` walk. Fetches via `asset.url` + `Accept: application/octet-stream` (same private-repo pattern proven in round 23-fix). Streams body with `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `Cache-Control: public, max-age=3600`.
+- **Workflow fix (`bridge-build.yml` line 102):** `url` in generated `latest.json` changed from `github.com/releases/download/${TAG}/${MSI_FILENAME}` to `iracing-setup-comparison-production.up.railway.app/api/bridge-asset/${MSI_FILENAME}`. Tag no longer needed in the URL — the proxy resolves by filename against the latest release.
+- **Deliverable C (hot-fix v0.1.9):** downloaded `latest.json` from `bridge-v0.1.9`, patched `.platforms["windows-x86_64"].url` with `jq` (signature untouched), re-uploaded with `gh release upload --clobber`. `/api/latest-bridge` now returns the proxy URL after ISR cache expiry (confirmed live: `"url": "https://iracing-setup-comparison-production.up.railway.app/api/bridge-asset/iRacing Setup Bridge_0.1.9_x64_en-US.msi"`).
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; `/api/bridge-asset/[filename]` (dynamic ƒ) in route table. YAML validation → green.
+**Open:** team-deployment must redeploy Railway so the new route goes live before the user triggers the in-app updater. The manifest is already patched; the route just needs to be deployed.
