@@ -139,17 +139,18 @@ export function CompareTable({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={`${r.carId}:${r.trackId}`} className="hover:bg-gray-900/40">
-              <td className="border border-gray-800 px-3 py-2 font-medium text-gray-100 sticky left-0 bg-gray-950 z-10">
+            <tr key={`${r.carId}:${r.trackId}`} className={buildCarHref ? "hover:bg-gray-800/60" : "hover:bg-gray-900/40"}>
+              <td className="border border-gray-800 px-3 py-2 font-medium sticky left-0 bg-gray-950 z-10">
                 {buildCarHref ? (
                   <Link
                     href={buildCarHref(r.carId)}
-                    className="hover:underline hover:text-blue-300 transition-colors"
+                    className="text-blue-300 hover:text-blue-200 transition-colors inline-flex items-center gap-1"
                   >
                     {r.carName}
+                    <span className="text-gray-500 text-xs" aria-hidden="true">→</span>
                   </Link>
                 ) : (
-                  r.carName
+                  <span className="text-gray-100">{r.carName}</span>
                 )}
               </td>
               <td className="border border-gray-800 px-3 py-2 text-gray-300">

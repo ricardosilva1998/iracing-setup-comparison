@@ -311,6 +311,11 @@ export const CAR_NAME_ALIASES: Record<string, string> = {
   // Porsche Cup 9922 (MG: slug collapses "Cup 992.2" -> "Cup 9922")
   "Porsche Cup 9922":                   "Porsche 911 Cup (992.2)",
 
+  // Porsche 992 (HYMO bare name for the Porsche 911 GT3 Cup 992.2; confirmed
+  // by the user as the same physical iRacing car. HYMO emits just "Porsche 992"
+  // while all other shops use "Porsche 911 Cup (992.2)").
+  "Porsche 992":                        "Porsche 911 Cup (992.2)",
+
   // Porsche RSR (MG: short form)
   "Porsche RSR":                        "Porsche 911 RSR",
   "Porsche Rsr":                        "Porsche 911 RSR",

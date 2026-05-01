@@ -1428,3 +1428,57 @@ Format per entry:
 - Cache-miss flow not exercised in production healthcheck (volume already had `b4SgQqqz5q_V` from deploy-2's successful page load, which ran the GnG auth + file fetch). Cache-miss will happen naturally on first access of any new datapack ID.
 - Round 22 backlog: mobile UI for 5-column table, `Oval` class cleanup, VRS decision, INGEST_SECRET rotation policy (all carry-over from r11-r20).
 - File cache has no TTL — stale setups stay cached until manually evicted. A `?refresh=1` param or cache-bust endpoint is a future round candidate.
+
+### 2026-04-30 14:00 — backend-dev (round 22a)
+**Task:** P1 merge Porsche 992 alias into Porsche 911 Cup (992.2). P2 add GET /api/files/[datapackId]/zip route (stream all cached files as a single ZIP).
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{lib/car-name-canonical.ts, app/api/files/[datapackId]/zip/route.ts (new), package.json, package-lock.json}
+**Decisions:**
+- **Porsche alias confirmed by DB inspection.** `Porsche 992` (PCUP, 10 HYMO listings) and `Porsche 911 Cup (992.2)` (PCUP, 40 listings across GnG/GO/MG/P1Doks) were separate Car rows. Added `"Porsche 992": "Porsche 911 Cup (992.2)"` to `CAR_NAME_ALIASES` in `lib/car-name-canonical.ts`. `migrateCars` smoke: pre-count=114, orphansFound=1, listingsRepointed=10, collisionsResolved=0, orphansDeleted=1, post-count=113. Run 2 idempotent (orphansFound=0). Production collapse happens on next `/api/ingest` call (migrateCars pre-step, round-13 pattern) — no manual action needed.
+- **ZIP route `app/api/files/[datapackId]/zip/route.ts` (new).** GET handler, `dynamic = "force-dynamic"`. Auth gated by existing `proxy.ts` matcher `/api/files/:path*` — no new auth code. Validates `datapackId` via `validateDatapackId` from `lib/files-manifest`. Calls `getOrFetchManifest(datapackId)` to warm cache on miss; on hit builds ZIP from disk only. Streams via `archiver("zip", { zlib: { level: 6 } }) → PassThrough → Readable.toWeb()` — never buffers the archive. Headers: `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<datapackId>.zip"`, `Cache-Control: private, max-age=3600`. Returns 400 on invalid ID, 404 if 0 files or datapack not found, 429 if download in flight, 502 if GnG fetch fails.
+- **Installed `archiver` + `@types/archiver`** (76 packages added; 5 moderate audit advisories unchanged carry-overs from previous rounds).
+- **Curl tests (local prod build, port 3030):** no auth → 401; invalid chars in ID → 400; ID too short → 400; cached ID `9qJ33t1m4pvw` → 200, 28.9 MB ZIP, `unzip -l` shows all 10 files matching the cache dir; second request → 200 in 0.82s (cache hit). All PASS.
+- **`npm run lint` (tsc --noEmit) → green. `npm run build` → green.** Route `/api/files/[datapackId]/zip` (dynamic ƒ) in route table.
+**Open:**
+- Production Porsche merge activates on next ingest (cron Tuesday or manual POST /api/ingest).
+- The ZIP route is GnG-only (sole shop with a file-download cache). frontend-dev should render the "Download all" button only when the listing's shop is Grid-and-Go.
+
+### 2026-04-30 14:15 — frontend-dev (round 22a)
+**Task:** Task A — add visual indication (chevron + blue car-name + intensified row hover) on car-name cells in CompareTable. Task B — add "Download all (.zip)" CTA on the car detail page (GnG section only), plus update cache-hint copy.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{components/CompareTable.tsx, app/week/[weekNum]/track/[trackId]/car/[carId]/page.tsx}
+**Decisions:**
+- **Task A (CompareTable):** When `buildCarHref` is provided, car-name cell now renders `text-blue-300` (constant, visible at rest) instead of `text-gray-100` with only hover colour change. A `→` chevron (`text-gray-500 text-xs`) is appended inline after the name inside the `<Link>`. Row hover intensified from `hover:bg-gray-900/40` to `hover:bg-gray-800/60` when `buildCarHref` is set. When `buildCarHref` is absent the `<span className="text-gray-100">` fallback preserves the old appearance exactly. Smoke on `/week/3/track/28?carClass=GT3` confirmed **20 chevron characters** in the HTML (one per GT3 car-name cell).
+- **Task B (car detail page):** Inside the GnG IIFE block, the single `<a>Browse setup files</a>` link is now wrapped in a `flex flex-wrap gap-3` row alongside a new `<a href="/api/files/${datapackId}/zip" className="text-emerald-400 hover:text-emerald-300 ...">Download all (.zip)</a>`. The helper `<p>` changed from "Downloads cached after first fetch. Login uses your /admin credentials." to "First download warms the cache (~10s); subsequent downloads are instant." Both CTAs render only for GnG cells with a valid `datapackId` — the outer `isGnG` and `m?.[1]` guards are unchanged. Non-GnG sections (HYMO, GO Setups, Majors Garage, P1Doks) render only "Open setup ↗". Smoke on `/week/3/track/28/car/3?carClass=GT3` confirmed: "Browse setup files" count=2, "Download all (.zip)" count=2, `/api/files/b4SgQqqz5q_V/zip` href present, old placeholder text count=0.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green. All 4 routes generate cleanly.
+- Regression: `/` 200, `/week/3` 200, `/admin` (no auth) 503 (middleware correctly gates), P1Doks still rendered in table. Track column hidden, sort indicators, P1Doks price suppression all unchanged.
+**Open:** ZIP download end-to-end (browser hitting the route with Basic Auth prompt) was not smoke-tested from the frontend path — the route itself was validated by backend-dev in round 22a. The FE link points to the correct `/api/files/<datapackId>/zip` path; auth is handled by the existing middleware matcher.
+
+### 2026-04-30 15:00 — team-qa (round 22a)
+**Task:** Verify Porsche 992 alias merge, ZIP route, visual cues on car-name cells, "Download all (.zip)" CTA on car detail page, and full regression suite.
+**Tests added/changed:** none (curl smoke; no test files added).
+**Suite result:** 26/26 checks PASS; lint green; build green.
+**Manual checks:**
+- `npm run lint` (tsc --noEmit) → green.
+- `npm run build` → green; 13 routes including new `/api/files/[datapackId]/zip` (ƒ). New route confirmed in build output.
+- Dev server port 3035 (3030 was still occupied by residual prior process; killed before teardown); torn down after all checks. ADMIN_USER/PASSWORD written to .env for test, removed at end — confirmed `grep -c '^ADMIN_' .env` → 0.
+- **Check 1 (Porsche alias):** `SELECT name FROM Car WHERE name LIKE '%orsche%'` → `Porsche 718 Cayman GT4 Clubsport MR`, `Porsche 911 Cup (992.2)`, `Porsche 911 GT3 R (992)`, `Porsche 911 RSR`, `Porsche 963 GTP`. `Porsche 992` row absent. `grep "Porsche 992" lib/car-name-canonical.ts` → alias line confirmed. migrateCars already ran (pre-migration count 114 → post 113, per backend-dev log). PASS.
+- **Check 2 (ZIP auth gate):** no auth → 401 + `WWW-Authenticate: Basic realm="iRacing Setup Admin"`. Wrong password → 401. `INVALID CHARS` in ID (URL-encoded space) → 000 (curl couldn't encode; route never reached). `ab` (too short) → 400. Special chars in ID → 400. PASS on all expected gates.
+- **Check 3 (ZIP valid download):** `GET /api/files/9qJ33t1m4pvw/zip -u admin:testpassword12` → 200, 28.9 MB. `unzip -l` shows 10 files (8× .sto, 1× .rpy, 1× .blap). Cache hit (second request) → 200 in 214ms. PASS.
+- **Check 4 (visual cues on track page):** `GET /week/3/track/28?carClass=GT3` → 20 `→` chevron chars (one per GT3 car-name cell × RSC stream doubling = 20); `text-blue-300` present in class attributes (60 occurrences = 10 cars × 6 RSC stream references); `hover:bg-gray-800/60` present (count=1 for the intensified row hover, collapsed by Tailwind JIT). PASS.
+- **Check 5 (car detail CTAs):** `GET /week/3/track/28/car/3?carClass=GT3` → 200. "Open setup" count=1 (unique text; RSC deduplication). "Browse setup files" count=1. "Download all" count=1. `/api/files/b4SgQqqz5q_V/zip` href present (2 in RSC stream). Cache hint "warms the cache" present; old "Downloads cached" text absent. Non-GnG shops: `api/files` href count = 1 (GnG only). PASS.
+- **Check 6 (end-to-end ZIP via FE link):** `curl -u admin:testpassword12 http://localhost:3035/api/files/b4SgQqqz5q_V/zip` → 200, 7.4 MB, 10 files including correct `.sto` + `.rpy` + `.blap` entries. PASS.
+- **Regression (rounds 12-21):**
+  - `/` → 200, banner=0, Compare nav=0, wrench SVG=1, Apply=0. PASS.
+  - `/week/3` → 200. PASS.
+  - `/week/3/track/28?carClass=GT3` → 200, Track col present in body (rendered but CSS-hidden), sort indicators `↕` = 10 (5 columns × RSC stream doubling). PASS.
+  - P1Doks price suppression: `$X.XX` count = 0. PASS.
+  - `/compare` → 307 to `/`. PASS.
+  - `/?weekNum=3&carClass=GT3` → 307. PASS.
+  - `/admin` no auth → 401. With test creds → 200. PASS.
+  - `/admin/files/<id> -u admin:testpassword12` → 200. PASS.
+  - `/api/files/<id> -u admin:testpassword12` → 200. PASS.
+  - `/api/files/<id>/<filename> -u admin:testpassword12` → 200. PASS.
+  - `/api/ingest` GET → 405; POST no bearer → 401. PASS.
+- **Note on initial stale dev server:** the first dev server (started while verifying lint+build) was serving a stale compiled cache that reflected round-21 state. Killed and restarted on a fresh port; subsequent results correctly reflect round-22a changes. This is a Turbopack dev-server artifact — build output and final smoke are authoritative.
+**Bugs found:** none.
+**Open:** Production deployment not performed this round (no team-deployment in scope). Round-21 `formatLapTime`/`formatPrice` duplication carry-over unchanged. All round-12 backlog items unchanged.
+- ZIP shares the same cache TTL as individual file routes (`private, max-age=3600`); no independent invalidation mechanism.

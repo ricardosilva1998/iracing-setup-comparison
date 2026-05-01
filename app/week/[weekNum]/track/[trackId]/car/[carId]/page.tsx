@@ -179,15 +179,23 @@ export default async function CarPage({
                     const datapackId = m?.[1] ?? null;
                     if (!datapackId) return null;
                     return (
-                      <div className="border-t border-gray-800 pt-2 space-y-1">
-                        <a
-                          href={`/admin/files/${datapackId}`}
-                          className="text-sm text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
-                        >
-                          Browse setup files (admin login required) &#x2197;
-                        </a>
+                      <div className="border-t border-gray-800 pt-2 space-y-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <a
+                            href={`/admin/files/${datapackId}`}
+                            className="text-sm text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
+                          >
+                            Browse setup files (admin login required) &#x2197;
+                          </a>
+                          <a
+                            href={`/api/files/${datapackId}/zip`}
+                            className="text-sm text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
+                          >
+                            Download all (.zip)
+                          </a>
+                        </div>
                         <p className="text-xs text-gray-600">
-                          Downloads cached after first fetch. Login uses your /admin credentials.
+                          First download warms the cache (~10s); subsequent downloads are instant.
                         </p>
                       </div>
                     );
