@@ -46,4 +46,8 @@ next-env.d.ts
 /app/generated/prisma
 dev.db
 dev.db-journal
+dev.db.backup-*
 .playwright-mcp/
+
+# local files cache (GnG download mirror)
+/data/
