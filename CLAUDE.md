@@ -2323,3 +2323,17 @@ Format per entry:
 - Version bump: all three manifest files (`bridge-app/package.json`, `bridge-app/src-tauri/tauri.conf.json`, `bridge-app/src-tauri/Cargo.toml`) report 0.4.1. PASS.
 - **Suite result:** 0 test failures; all 8 discrete checks PASS.
 **Open:** Carry-overs from round 31 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint). Tauri runtime behaviour (click interactions, accordion expand/collapse, progress bar animation) is not verifiable without a Tauri build; static source analysis confirms the markup and logic are present.
+
+### 2026-05-02 13:31 — team-deployment (round 32)
+**Task:** Phase 1 — commit + push bridge v0.4.1, tag, wait for GitHub Actions build, verify assets + proxy; Phase 2 — update /releases fallback, second Railway deploy.
+**Commits:** c99caad — "feat(round 32): bridge v0.4.1 — progress bar + class accordions + Garage 61 default", 1928112 — "docs(round 32): /releases lists bridge-v0.4.1"
+**Pushed to:** origin/main @ 1928112
+**PR:** n/a
+**Deploy:** Phase 1 — no Railway redeploy (bridge-only, no web app changes). Phase 2 — railway up → e6381f4d-1660-4635-bff4-91603ac7213a → success
+**Build time:** Phase 1 GitHub Actions (bridge-build.yml run 25252725965): success (tag bridge-v0.4.1). Phase 2 Railway: ~75s
+**Healthcheck:** pass — GET / → 200, GET /compare → 200, GET /releases → 200
+**Logs after deploy (60s window):** clean — no errors, no restart cycles
+**Open:**
+- /api/latest-bridge ISR refreshed to 0.4.1 (confirmed during this round); /releases live GitHub API will reflect 0.4.1 after the 5-min ISR window (bridge-v0.4.1 is already marked "Latest" on GitHub).
+- Asset proxy verified: GET /api/bridge-asset/iRacing.Setup.Bridge_0.4.1_x64_en-US.msi → 200 application/octet-stream.
+- Carry-overs from round 31 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint).
