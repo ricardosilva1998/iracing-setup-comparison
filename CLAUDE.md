@@ -2229,13 +2229,19 @@ Format per entry:
 - `/releases` ISR cache shows v0.2.1 until the 5-min TTL expires; FALLBACK_RELEASES is correct for any Railway redeploy that drops GITHUB_TOKEN.
 - Round 31 backlog: mobile UI for 5-column table (round-10 carry-over, now urgent); `Oval` class label cleanup (MG NASCAR); VRS decision + creds.
 
-### 2026-05-02 HH:MM — team-deployment (round 30-fix)
+### 2026-05-02 11:38 — team-deployment (round 30-fix)
 **Task:** Ship bridge v0.3.1 hotfix — skip datapack_id validation when asset_url is present (HYMO "Download All" was failing with "invalid datapack_id").
-**Commits:** TBD
-**Pushed to:** origin/main @ TBD
+**Commits:**
+- `b1ce52c` — "fix(round 30): bridge v0.3.1 — skip datapack_id validation when asset_url present" (5 files: lib.rs, package.json, Cargo.toml, tauri.conf.json, CLAUDE.md)
+- `7a7bcd6` — "fix(round 30): bridge v0.3.1 — fix id scope in else branch of zip_url" (1 file: lib.rs — Rust compile fix: bare `id` in else branch replaced with `&args.datapack_id`)
+- Phase 2 commit: TBD (app/releases/page.tsx)
+**Pushed to:** origin/main @ 7a7bcd6 (pre-Phase-2)
 **PR:** n/a
-**Deploy:** Phase 1 — git tag bridge-v0.3.1 + push; Phase 2 — /releases page update + railway up
-**Build time:** TBD (GitHub Actions Windows MSI build)
-**Healthcheck:** TBD
-**Logs after deploy (60s window):** TBD
+**Deploy:** Phase 1 — tag bridge-v0.3.1 pushed; GitHub Actions run 25250692677 succeeded in ~15 min. Phase 2 — railway up pending.
+**Build outcome:** GitHub Actions "Build Windows MSI" — SUCCESS. First attempt (run 25250340414) failed with Rust E0425 (bare `id` out of scope in else branch). Fixed in `7a7bcd6`, tag re-pushed, second run succeeded.
+**Release assets:** `iRacing.Setup.Bridge_0.3.1_x64_en-US.msi` (3,280,896 bytes). Asset name uses DOTS — round-27-fix invariant preserved.
+**Asset proxy:** HEAD `/api/bridge-asset/iRacing.Setup.Bridge_0.3.1_x64_en-US.msi` → 200 `application/octet-stream`. PASS.
+**Build time:** ~15 min (GitHub Actions Windows MSI)
+**Healthcheck:** TBD (Phase 2 Railway deploy)
+**Logs after deploy (60s window):** TBD (Phase 2)
 **Open:** `HYMO_PASSWORD` rotation still pending (leaked in chat round 28). Rotate `.env` + Railway simultaneously before next user-visible password-reset event.
