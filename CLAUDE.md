@@ -2234,14 +2234,14 @@ Format per entry:
 **Commits:**
 - `b1ce52c` — "fix(round 30): bridge v0.3.1 — skip datapack_id validation when asset_url present" (5 files: lib.rs, package.json, Cargo.toml, tauri.conf.json, CLAUDE.md)
 - `7a7bcd6` — "fix(round 30): bridge v0.3.1 — fix id scope in else branch of zip_url" (1 file: lib.rs — Rust compile fix: bare `id` in else branch replaced with `&args.datapack_id`)
-- Phase 2 commit: TBD (app/releases/page.tsx)
-**Pushed to:** origin/main @ 7a7bcd6 (pre-Phase-2)
+- Phase 2 commit: `a1a85d2` — "docs(round 30-fix): /releases lists bridge-v0.3.1"
+**Pushed to:** origin/main @ a1a85d2
 **PR:** n/a
-**Deploy:** Phase 1 — tag bridge-v0.3.1 pushed; GitHub Actions run 25250692677 succeeded in ~15 min. Phase 2 — railway up pending.
-**Build outcome:** GitHub Actions "Build Windows MSI" — SUCCESS. First attempt (run 25250340414) failed with Rust E0425 (bare `id` out of scope in else branch). Fixed in `7a7bcd6`, tag re-pushed, second run succeeded.
+**Deploy:** Phase 1 — tag bridge-v0.3.1 pushed; GitHub Actions run 25250692677 succeeded in ~15 min. Phase 2 — `railway up --detach` → deployment `6d0fb957-b13a-4707-b27c-2555c69f3987` → SUCCESS.
+**Build outcome:** GitHub Actions "Build Windows MSI" — SUCCESS. First attempt (run 25250340414) failed with Rust E0425 (bare `id` out of scope in else branch of zip_url). Fixed in `7a7bcd6`, tag re-pushed, second run succeeded.
 **Release assets:** `iRacing.Setup.Bridge_0.3.1_x64_en-US.msi` (3,280,896 bytes). Asset name uses DOTS — round-27-fix invariant preserved.
 **Asset proxy:** HEAD `/api/bridge-asset/iRacing.Setup.Bridge_0.3.1_x64_en-US.msi` → 200 `application/octet-stream`. PASS.
-**Build time:** ~15 min (GitHub Actions Windows MSI)
-**Healthcheck:** TBD (Phase 2 Railway deploy)
-**Logs after deploy (60s window):** TBD (Phase 2)
+**Build time:** ~15 min (GitHub Actions Windows MSI) + ~8 min (Railway web deploy)
+**Healthcheck:** `/` → 200. `/releases` → 200, v0.3.1 at top. `/api/latest-bridge` → `{"version":"0.3.1",...}`. PASS.
+**Logs after deploy (60s window):** clean — Mounting volume → Starting Container → Next.js 16.2.4 → Ready in 0ms. No errors, no restart cycles.
 **Open:** `HYMO_PASSWORD` rotation still pending (leaked in chat round 28). Rotate `.env` + Railway simultaneously before next user-visible password-reset event.
