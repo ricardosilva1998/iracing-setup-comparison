@@ -34,7 +34,8 @@
  *
  * DO NOT MERGE these genuinely-different iRacing models:
  *   - Ford GT GT2 vs Ford GT GTE  (distinct iRacing models)
- *   - BMW M4 G82 GT4 vs BMW M4 GT4  (bare "BMW M4 GT4" kept separate)
+ *   - BMW M4 G82 GT4 vs BMW M4 G82 GT4 Evo  (distinct iRacing models; DO NOT merge)
+ *     Note: bare "BMW M4 GT4" IS merged into "BMW M4 G82 GT4" (round 31 user-confirmed)
  *   - Super Formula SF23 - Honda vs - Toyota vs bare SF23 (distinct variants)
  *   - Ferrari 296 GT3 vs Ferrari 296 Challenge (different models)
  *   - All Dirt Big Block / Dirt Late Model / Dirt Sprint Car / Dirt Ump
@@ -253,6 +254,10 @@ export const CAR_NAME_ALIASES: Record<string, string> = {
   "BMW M2":                             "BMW M2 CS Racing",
   "BMW M2 CS":                          "BMW M2 CS Racing",
   "BMW M2 CSR":                         "BMW M2 CS Racing",
+
+  // BMW M4 GT4 (bare name, no G82 chassis designator — P1Doks emits this form;
+  // round 31 user-confirmed: merge into the G82 canonical. DO NOT merge G82 GT4 Evo.)
+  "BMW M4 GT4":                         "BMW M4 G82 GT4",
 
   // BMW M4 GT3
   "BMW M4 GT3":                         "BMW M4 GT3 EVO",

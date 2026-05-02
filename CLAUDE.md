@@ -2245,3 +2245,36 @@ Format per entry:
 **Healthcheck:** `/` → 200. `/releases` → 200, v0.3.1 at top. `/api/latest-bridge` → `{"version":"0.3.1",...}`. PASS.
 **Logs after deploy (60s window):** clean — Mounting volume → Starting Container → Next.js 16.2.4 → Ready in 0ms. No errors, no restart cycles.
 **Open:** `HYMO_PASSWORD` rotation still pending (leaked in chat round 28). Rotate `.env` + Railway simultaneously before next user-visible password-reset event.
+
+### 2026-05-02 00:00 — backend-dev (round 31)
+**Task:** Merge bare "BMW M4 GT4" into canonical "BMW M4 G82 GT4" alias; add `GET /api/picker/classes` endpoint for bulk-download class multi-select.
+**Files:** `lib/car-name-canonical.ts`, `app/api/picker/classes/route.ts` (new)
+**Decisions:**
+- Added `"BMW M4 GT4": "BMW M4 G82 GT4"` to `CAR_NAME_ALIASES` (Bucket C). Pre-migration dev.db had 3 rows for this family: G82 (18 listings), G82 Evo (11), bare GT4 (10). `migrateCars` run 1: orphansFound=1, listingsRepointed=10, collisionsResolved=0, orphansDeleted=1. Post-state: G82=28 listings, G82 Evo=11. Run 2: all zeros (idempotent). `BMW M4 G82 GT4 Evo` is untouched — it is a distinct iRacing car.
+- Updated the "DO NOT MERGE" comment block: replaced the line mentioning bare "BMW M4 GT4 kept separate" with the correct two-car note (G82 vs G82 Evo remain distinct; bare GT4 is now merged, round 31 user-confirmed).
+- New route `app/api/picker/classes/route.ts`: `GET /api/picker/classes` → `{ classes: string[] }`, `dynamic = "force-dynamic"`, CORS `*`, OPTIONS 204. Returns `prisma.car.findMany({ select: { carClass }, distinct: ["carClass"], orderBy: { carClass: "asc" } })` filtered to non-empty strings. Local smoke: 13 classes returned (Formula, GT2, GT3, GT4, GTE, GTP/LMDh, LMP2, LMP3, Oval, PCC, PCUP, Production, TCR). Idempotent; pure read.
+- `npm run lint` (tsc --noEmit) → green. `npm run build` → green; `/api/picker/classes` (dynamic ƒ) appears in route listing alongside the five existing picker routes.
+**Open:** Duplicate candidate findings from the diagnostic (see backend-dev diff summary): `Super Formula SF23 - Toyota` (8 listings) and `Super Formula SF23 - Honda` (7 listings) are separate from bare `SF23` (8 listings) and `Super Formula` (7 listings) — these are genuinely distinct iRacing variants (Honda/Toyota engine variants) and should NOT be merged without user confirmation. `Ford Mustang GT4` (37 listings) appears as a separate car from `Aston Martin Vantage GT4` / `Mercedes-AMG GT4` etc. — correct, it is a real iRacing car. No other suspicious duplicates found; the "Oval" carClass entry is the MG carry-over from round 10. All carry-overs from round 30 unchanged.
+
+### 2026-05-02 00:00 — frontend-dev (round 31)
+**Task:** Add car-class multi-select + 7 preset buttons to Bulk Download; bump version 0.3.1 → 0.4.0.
+**Files:** bridge-app/src/screens/Bulk.tsx, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml
+**Decisions:**
+- Confirmed `Car.carClass: string` already present in `bridge-app/src/types.ts` — no change needed.
+- On mount, `fetch_picker` with `endpoint: "classes"` fetches `/api/picker/classes` alongside the weeks fetch. Failure is non-fatal (catch swallowed) so the screen degrades gracefully if the new endpoint isn't deployed yet.
+- Classes UI renders only when `availableClasses.length > 0`: a horizontal flex row of 7 pill preset buttons (All / GT3 / GT4 / IMSA Endurance / WEC Hypercar / Formula / TCR), followed by a wrapped checkbox list of all 13 available classes. Active preset gets `COLOR.green` border + `#052e16` background. Presets silently skip any class not in the fetched list (defensive against future renames).
+- Filter logic in `handleStartBulk`: `filteredCars = selectedClasses.length === 0 ? carData.cars : carData.cars.filter(c => selectedClasses.includes(c.carClass))`. Empty selection = all classes (existing behaviour unchanged).
+- When `selectedClasses.length > 0`, a hint line "Filtering to GT3, GTP/LMDh, LMP2 — only cars in these classes will be downloaded." renders just above the Start button.
+- Version bumped 0.3.1 → 0.4.0 in all three manifests (package.json, tauri.conf.json, Cargo.toml).
+**Open:** The count hint shows class names but not an exact car count (would require prefetching all (track, car) pairs on mount, which is expensive). A real car count could be added in a future round as a pre-flight step.
+
+### 2026-05-02 00:30 — team-qa (round 31)
+**Task:** Verify BMW M4 GT4 alias, new `/api/picker/classes` endpoint, and bridge 0.4.0 version bumps.
+**Files:** none modified (verification only)
+**Decisions:**
+- `npm run lint` (tsc --noEmit) → green. `npm run build` (Next 16.2.4 + Turbopack) → green; `/api/picker/classes` (dynamic ƒ) present in route listing alongside existing 5 picker routes.
+- **BMW M4 GT4 alias:** `lib/car-name-canonical.ts` contains `"BMW M4 GT4": "BMW M4 G82 GT4"` entry. `Car` table post-migration: `BMW M4 G82 GT4` = 28 listings (18+10 merged), `BMW M4 G82 GT4 Evo` = 11 listings. No bare `BMW M4 GT4` row. Idempotent (backend-dev confirmed run 2 = all zeros). Round-3 car-class invariant: 0 conflicts.
+- **`/api/picker/classes` smoke (port 3030 dev server):** 13 entries alphabetical (Formula, GT2, GT3, GT4, GTE, GTP/LMDh, LMP2, LMP3, Oval, PCC, PCUP, Production, TCR). CORS headers present: `access-control-allow-origin: *`, `access-control-allow-methods: GET, OPTIONS`. OPTIONS → 204. PASS.
+- **Regression checks:** `/api/picker/all-cars` → 200, 112 cars, `iracingFolderName` present. `/api/picker/files?weekNum=3&trackId=28&carId=3` → 200, 5 files, `externalId` present. `/api/ingest` GET → 405. POST no bearer → 401. `/` → 200, banner absent, no Apply button. `/admin` no auth → 503 (ADMIN_PASSWORD not configured in local .env — expected; production returns 401 when env is set, 503 when unconfigured). `/api/latest-bridge` → error (GITHUB_TOKEN not configured locally, expected in local dev). All pass.
+- **Bridge 0.4.0:** all three manifests at `0.4.0` (`package.json`, `tauri.conf.json`, `Cargo.toml`). `bridge-app/src/screens/Bulk.tsx` grep: `applyPreset|selectedClasses|availableClasses` → 17 hits (≥3). `IMSA Endurance|WEC Hypercar` → 2 hits. `npx tsc --noEmit` inside bridge-app → clean (exit 0).
+**Open:** none new. `/api/latest-bridge` and `/admin` return error/503 locally due to missing `GITHUB_TOKEN`/`ADMIN_PASSWORD` env vars — not code regressions, known local-env conditions.

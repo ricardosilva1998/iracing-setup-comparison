@@ -12,6 +12,24 @@ const SHOPS = [
   { label: "P1Doks", slug: "p1doks" },
 ];
 
+type ClassPreset = { label: string; classes: string[] };
+
+const CLASS_PRESETS: ClassPreset[] = [
+  { label: "All", classes: [] },
+  { label: "GT3", classes: ["GT3"] },
+  { label: "GT4", classes: ["GT4"] },
+  { label: "IMSA Endurance", classes: ["GT3", "GTP/LMDh", "LMP2"] },
+  { label: "WEC Hypercar", classes: ["GTP/LMDh", "LMP2"] },
+  { label: "Formula", classes: ["Formula"] },
+  { label: "TCR", classes: ["TCR"] },
+];
+
+function setsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sorted = [...b].sort();
+  return [...a].sort().every((v, i) => v === sorted[i]);
+}
+
 interface Props {
   settings: Settings;
   overrides: Record<string, string>;
@@ -19,6 +37,8 @@ interface Props {
 
 export function BulkScreen({ settings, overrides }: Props) {
   const [weeks, setWeeks] = useState<Week[]>([]);
+  const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [bulkShop, setBulkShop] = useState<string>("grid-and-go");
   const [bulkWeek, setBulkWeek] = useState<number | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
@@ -30,12 +50,28 @@ export function BulkScreen({ settings, overrides }: Props) {
     invoke<{ weeks: Week[] }>("fetch_picker", { endpoint: "weeks" })
       .then((data) => {
         setWeeks(data.weeks);
-        // Default to the week with the highest setupCount.
         const best = [...data.weeks].sort((a, b) => b.setupCount - a.setupCount)[0];
         if (best) setBulkWeek(best.weekNum);
       })
       .catch((err) => setError(String(err)));
+
+    invoke<{ classes: string[] }>("fetch_picker", { endpoint: "classes" })
+      .then((data) => setAvailableClasses(data.classes))
+      .catch(() => {
+        // Non-fatal: class filter degrades gracefully to show all cars.
+      });
   }, []);
+
+  function toggleClass(cls: string) {
+    setSelectedClasses((prev) =>
+      prev.includes(cls) ? prev.filter((c) => c !== cls) : [...prev, cls],
+    );
+  }
+
+  function applyPreset(preset: ClassPreset) {
+    const valid = preset.classes.filter((c) => availableClasses.includes(c));
+    setSelectedClasses(valid);
+  }
 
   async function handleStartBulk() {
     if (bulkWeek === null || bulkRunning) return;
@@ -58,7 +94,11 @@ export function BulkScreen({ settings, overrides }: Props) {
         const carData = await invoke<{ cars: Car[] }>("fetch_picker", {
           endpoint: `cars?weekNum=${bulkWeek}&trackId=${track.id}`,
         });
-        for (const car of carData.cars) {
+        const filteredCars =
+          selectedClasses.length === 0
+            ? carData.cars
+            : carData.cars.filter((c) => selectedClasses.includes(c.carClass));
+        for (const car of filteredCars) {
           const fileData = await invoke<{
             files: ShopFiles[];
             iracingFolderName: string | null;
@@ -187,7 +227,7 @@ export function BulkScreen({ settings, overrides }: Props) {
         Manage Folders first — cars without a folder mapping are skipped.
       </p>
 
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={styles.dropdownGroup}>
           <label style={styles.dropdownLabel} htmlFor="bulk-shop-select">
             Shop
@@ -227,6 +267,92 @@ export function BulkScreen({ settings, overrides }: Props) {
           </select>
         </div>
       </div>
+
+      {/* Class filter */}
+      {availableClasses.length > 0 && (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <span style={{ ...styles.dropdownLabel, display: "block", marginBottom: "0.5rem" }}>
+            Classes{" "}
+            <span style={{ color: COLOR.muted, fontWeight: 400 }}>
+              {selectedClasses.length === 0 ? "(all)" : `(${selectedClasses.length} selected)`}
+            </span>
+          </span>
+
+          {/* Preset buttons */}
+          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+            {CLASS_PRESETS.map((preset) => {
+              const isActive =
+                preset.classes.length === 0
+                  ? selectedClasses.length === 0
+                  : setsEqual(selectedClasses, preset.classes.filter((c) => availableClasses.includes(c)));
+              return (
+                <button
+                  key={preset.label}
+                  onClick={() => applyPreset(preset)}
+                  disabled={bulkRunning}
+                  style={{
+                    padding: "0.25rem 0.65rem",
+                    borderRadius: 9999,
+                    border: `1px solid ${isActive ? COLOR.green : COLOR.border}`,
+                    backgroundColor: isActive ? "#052e16" : COLOR.surface,
+                    color: isActive ? COLOR.green : COLOR.muted,
+                    fontSize: 12,
+                    cursor: bulkRunning ? "not-allowed" : "pointer",
+                    fontWeight: isActive ? 600 : 400,
+                    transition: "background-color 0.15s, color 0.15s",
+                  }}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Checkbox list */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.35rem 1rem",
+              backgroundColor: COLOR.surface,
+              border: `1px solid ${COLOR.border}`,
+              borderRadius: 8,
+              padding: "0.6rem 0.75rem",
+            }}
+          >
+            {availableClasses.map((cls) => (
+              <label
+                key={cls}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  fontSize: 13,
+                  color: selectedClasses.includes(cls) ? COLOR.text : COLOR.muted,
+                  cursor: bulkRunning ? "not-allowed" : "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedClasses.includes(cls)}
+                  onChange={() => toggleClass(cls)}
+                  disabled={bulkRunning}
+                  style={{ accentColor: COLOR.green, cursor: bulkRunning ? "not-allowed" : "pointer" }}
+                />
+                {cls}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selectedClasses.length > 0 && (
+        <p style={{ fontSize: 12, color: COLOR.muted, marginBottom: "0.75rem", marginTop: 0 }}>
+          Filtering to {selectedClasses.join(", ")} — only cars in{" "}
+          {selectedClasses.length === 1 ? "this class" : "these classes"} will be downloaded.
+        </p>
+      )}
 
       <button
         style={
