@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.4.1",
+    publishedAt: "2026-05-02",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.4.1_x64_en-US.msi",
+        sizeBytes: 3280896,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.4.1/iRacing.Setup.Bridge_0.4.1_x64_en-US.msi",
+      },
+    ],
+    body: "Round 32: Bulk Download progress bar (current/total %), Manage Folders grouped by class accordions (collapsible), default folder for every car now ends with /Garage 61 - #NAOTRAVO (your saved overrides are preserved as-is).",
+  },
+  {
     tagName: "bridge-v0.4.0",
     publishedAt: "2026-05-02",
     assets: [
