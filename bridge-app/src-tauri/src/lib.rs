@@ -520,7 +520,7 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
         format!(
             "{}/api/files/{}/zip",
             file.server_url.trim_end_matches('/'),
-            id
+            &args.datapack_id
         )
     };
 
