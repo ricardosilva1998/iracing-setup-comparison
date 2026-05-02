@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.4.0",
+    publishedAt: "2026-05-02",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.4.0_x64_en-US.msi",
+        sizeBytes: 3300000,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.4.0/iRacing.Setup.Bridge_0.4.0_x64_en-US.msi",
+      },
+    ],
+    body: "Round 31: Bulk Download tab gains a class multi-select + 7 preset buttons (All / GT3 / GT4 / IMSA Endurance / WEC Hypercar / Formula / TCR). Server-side: BMW M4 GT4 (P1Doks bare name) now merges into BMW M4 G82 GT4 in Manage Folders. iRacing's M4 GT4 EVO stays separate as it's a distinct iRacing setup folder.",
+  },
+  {
     tagName: "bridge-v0.3.1",
     publishedAt: "2026-05-02",
     assets: [
