@@ -461,13 +461,17 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
     let track_slug = safe_segment(&args.track_slug).map_err(|e| e.to_string())?;
     let shop_slug = safe_segment(&args.shop_slug).map_err(|e| e.to_string())?;
 
-    // Validate datapack_id — alphanumerics, hyphens, underscores, 4–40 chars.
-    let id = &args.datapack_id;
-    if id.len() < 4
-        || id.len() > 40
-        || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(format!("invalid datapack_id: {}", id));
+    // Validate datapack_id only when we'll use it to construct the URL.
+    // When asset_url is provided (HYMO and other non-GnG shops), datapack_id
+    // is not consulted — the JS side may pass empty string for those shops.
+    if args.asset_url.is_none() {
+        let id = &args.datapack_id;
+        if id.len() < 4
+            || id.len() > 40
+            || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(format!("invalid datapack_id: {}", id));
+        }
     }
 
     // Build: <iracingRoot>/<carFolder>/<seasonLabel>/<trackSlug>/<shopSlug>/

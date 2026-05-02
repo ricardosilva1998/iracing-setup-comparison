@@ -2228,3 +2228,14 @@ Format per entry:
 - `HYMO_PASSWORD` rotation still pending (leaked in chat round 28). Rotate `.env` + Railway simultaneously before next user-visible password-reset event.
 - `/releases` ISR cache shows v0.2.1 until the 5-min TTL expires; FALLBACK_RELEASES is correct for any Railway redeploy that drops GITHUB_TOKEN.
 - Round 31 backlog: mobile UI for 5-column table (round-10 carry-over, now urgent); `Oval` class label cleanup (MG NASCAR); VRS decision + creds.
+
+### 2026-05-02 HH:MM — team-deployment (round 30-fix)
+**Task:** Ship bridge v0.3.1 hotfix — skip datapack_id validation when asset_url is present (HYMO "Download All" was failing with "invalid datapack_id").
+**Commits:** TBD
+**Pushed to:** origin/main @ TBD
+**PR:** n/a
+**Deploy:** Phase 1 — git tag bridge-v0.3.1 + push; Phase 2 — /releases page update + railway up
+**Build time:** TBD (GitHub Actions Windows MSI build)
+**Healthcheck:** TBD
+**Logs after deploy (60s window):** TBD
+**Open:** `HYMO_PASSWORD` rotation still pending (leaked in chat round 28). Rotate `.env` + Railway simultaneously before next user-visible password-reset event.
