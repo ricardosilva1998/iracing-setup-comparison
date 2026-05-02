@@ -1,8 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { COLOR, styles } from "../styles";
-import { browseRelativeFolder } from "../helpers";
+import { browseRelativeFolder, defaultFolderForCar } from "../helpers";
 import type { Settings, Car } from "../types";
+
+const CLASS_ORDER = [
+  "GT3", "GT4", "GTE", "GT2", "GTP/LMDh", "LMP2", "LMP3",
+  "TCR", "PCUP", "PCC", "Formula", "Production", "NASCAR Cup", "Oval",
+];
+
+function sortClasses(classes: string[]): string[] {
+  return [...classes].sort((a, b) => {
+    const ai = CLASS_ORDER.indexOf(a);
+    const bi = CLASS_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
 
 interface Props {
   settings: Settings;
@@ -19,6 +35,7 @@ export function ManageScreen({ settings, overrides, onOverridesChanged }: Props)
   const [rowStatus, setRowStatus] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [error, setError] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [accordionOpen, setAccordionOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     invoke<{ cars: Car[] }>("fetch_picker", { endpoint: "all-cars" })
@@ -28,8 +45,8 @@ export function ManageScreen({ settings, overrides, onOverridesChanged }: Props)
   }, []);
 
   function getDisplayValue(car: Car): string {
-    // Priority: local dirty edit > persisted override > API default > empty
-    return dirty[car.name] ?? overrides[car.name] ?? car.iracingFolderName ?? "";
+    // Priority: local dirty edit > persisted override > default (with Garage 61 suffix) > empty
+    return dirty[car.name] ?? overrides[car.name] ?? defaultFolderForCar(car.iracingFolderName);
   }
 
   function handleChange(carName: string, value: string) {
@@ -52,7 +69,7 @@ export function ManageScreen({ settings, overrides, onOverridesChanged }: Props)
   }
 
   async function handleSaveRow(car: Car) {
-    const value = dirty[car.name] ?? overrides[car.name] ?? car.iracingFolderName ?? "";
+    const value = dirty[car.name] ?? overrides[car.name] ?? defaultFolderForCar(car.iracingFolderName);
     if (!value.trim()) {
       setRowStatus((prev) => ({
         ...prev,
@@ -138,10 +155,141 @@ export function ManageScreen({ settings, overrides, onOverridesChanged }: Props)
     }
   }
 
-  const filteredCars = allCars.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  function toggleAccordion(cls: string) {
+    setAccordionOpen((prev) => ({ ...prev, [cls]: !prev[cls] }));
+  }
+
+  const lowerSearch = search.toLowerCase();
+
+  // Group all cars by carClass
+  const grouped = new Map<string, Car[]>();
+  for (const car of allCars) {
+    const cls = car.carClass ?? "Unknown";
+    if (!grouped.has(cls)) grouped.set(cls, []);
+    grouped.get(cls)!.push(car);
+  }
+
+  const sortedClasses = sortClasses(Array.from(grouped.keys()));
+
+  // When search is active, a class is visible only if it has matching cars
+  const isSearching = lowerSearch.length > 0;
+
   const dirtyCount = Object.keys(dirty).length;
+
+  function renderCarRow(car: Car) {
+    const value = getDisplayValue(car);
+    const isBusy = savingCar === car.name;
+    const hasOverride = overrides[car.name] !== undefined;
+    const hasDirty = dirty[car.name] !== undefined;
+    const status = rowStatus[car.name];
+
+    return (
+      <div
+        key={car.id}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "0.75rem",
+          padding: "0.65rem 1rem",
+          borderBottom: `1px solid ${COLOR.border}`,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ minWidth: 180, flex: "1 1 180px" }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{car.name}</div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "0.4rem",
+            alignItems: "center",
+            flex: "2 1 240px",
+            flexWrap: "wrap",
+          }}
+        >
+          <input
+            style={{
+              ...styles.input,
+              flex: 1,
+              fontSize: 13,
+              padding: "0.35rem 0.6rem",
+              minWidth: 160,
+              borderColor: hasDirty ? COLOR.accent : undefined,
+            }}
+            type="text"
+            value={value}
+            onChange={(e) => handleChange(car.name, e.target.value)}
+            placeholder="e.g. porsche9922cup/Garage 61 - #NAOTRAVO"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            disabled={isBusy}
+          />
+          <button
+            style={{ ...styles.browseButton, padding: "0.35rem 0.6rem", fontSize: 12 }}
+            type="button"
+            onClick={() => handleBrowseRow(car)}
+            disabled={isBusy}
+          >
+            Browse…
+          </button>
+        </div>
+
+        <div
+          style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexShrink: 0 }}
+        >
+          <button
+            style={{
+              backgroundColor: isBusy ? "#374151" : COLOR.accent,
+              color: isBusy ? COLOR.muted : "#fff",
+              border: "none",
+              borderRadius: 5,
+              padding: "0.35rem 0.75rem",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: isBusy ? "wait" : "pointer",
+            }}
+            onClick={() => handleSaveRow(car)}
+            disabled={isBusy}
+          >
+            {isBusy ? "…" : "Save"}
+          </button>
+          {hasOverride && (
+            <button
+              style={{
+                backgroundColor: "transparent",
+                color: COLOR.muted,
+                border: `1px solid ${COLOR.border}`,
+                borderRadius: 5,
+                padding: "0.35rem 0.6rem",
+                fontSize: 12,
+                cursor: isBusy ? "wait" : "pointer",
+              }}
+              onClick={() => handleResetRow(car)}
+              disabled={isBusy}
+              title="Clear override and revert to API default"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        {status && (
+          <div
+            style={{
+              width: "100%",
+              fontSize: 11,
+              color: status.ok ? COLOR.green : COLOR.red,
+            }}
+          >
+            {status.ok ? "" : "Error: "}
+            {status.message}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={styles.screen}>
@@ -195,129 +343,63 @@ export function ManageScreen({ settings, overrides, onOverridesChanged }: Props)
       {loading && <div style={styles.loadingText}>Loading cars…</div>}
 
       {!loading && (
-        <div
-          style={{
-            backgroundColor: COLOR.surface,
-            border: `1px solid ${COLOR.border}`,
-            borderRadius: 8,
-            overflow: "hidden",
-          }}
-        >
-          {filteredCars.length === 0 && (
-            <div style={{ padding: "1rem", color: COLOR.muted, fontSize: 13 }}>
-              No cars match "{search}".
-            </div>
-          )}
-          {filteredCars.map((car) => {
-            const value = getDisplayValue(car);
-            const isBusy = savingCar === car.name;
-            const hasOverride = overrides[car.name] !== undefined;
-            const hasDirty = dirty[car.name] !== undefined;
-            const status = rowStatus[car.name];
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {sortedClasses.map((cls) => {
+            const carsInClass = grouped.get(cls) ?? [];
+            const matchingCars = isSearching
+              ? carsInClass.filter((c) => c.name.toLowerCase().includes(lowerSearch))
+              : carsInClass;
+
+            if (isSearching && matchingCars.length === 0) return null;
+
+            // Auto-expand when searching and there are matches
+            const isOpen = isSearching ? true : (accordionOpen[cls] ?? false);
 
             return (
               <div
-                key={car.id}
+                key={cls}
                 style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "0.75rem",
-                  padding: "0.65rem 1rem",
-                  borderBottom: `1px solid ${COLOR.border}`,
-                  flexWrap: "wrap",
+                  backgroundColor: COLOR.surface,
+                  border: `1px solid ${COLOR.border}`,
+                  borderRadius: 8,
+                  overflow: "hidden",
                 }}
               >
-                <div style={{ minWidth: 180, flex: "1 1 180px" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{car.name}</div>
-                  <div style={{ fontSize: 11, color: COLOR.muted }}>{car.carClass}</div>
-                </div>
-
-                <div
+                <button
+                  type="button"
+                  onClick={() => toggleAccordion(cls)}
                   style={{
+                    width: "100%",
                     display: "flex",
-                    gap: "0.4rem",
                     alignItems: "center",
-                    flex: "2 1 240px",
-                    flexWrap: "wrap",
+                    gap: "0.5rem",
+                    padding: "0.65rem 1rem",
+                    backgroundColor: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: COLOR.text,
+                    textAlign: "left",
                   }}
+                  aria-expanded={isOpen}
                 >
-                  <input
-                    style={{
-                      ...styles.input,
-                      flex: 1,
-                      fontSize: 13,
-                      padding: "0.35rem 0.6rem",
-                      minWidth: 160,
-                      borderColor: hasDirty ? COLOR.accent : undefined,
-                    }}
-                    type="text"
-                    value={value}
-                    onChange={(e) => handleChange(car.name, e.target.value)}
-                    placeholder="e.g. porsche9922cup"
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    disabled={isBusy}
-                  />
-                  <button
-                    style={{ ...styles.browseButton, padding: "0.35rem 0.6rem", fontSize: 12 }}
-                    type="button"
-                    onClick={() => handleBrowseRow(car)}
-                    disabled={isBusy}
-                  >
-                    Browse…
-                  </button>
-                </div>
+                  <span style={{ fontSize: 11, color: COLOR.muted, minWidth: 10 }}>
+                    {isOpen ? "▼" : "▶"}
+                  </span>
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>{cls}</span>
+                  <span style={{ fontSize: 12, color: COLOR.muted }}>
+                    ({matchingCars.length}{isSearching && matchingCars.length !== carsInClass.length ? ` of ${carsInClass.length}` : ""})
+                  </span>
+                </button>
 
-                <div
-                  style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexShrink: 0 }}
-                >
-                  <button
-                    style={{
-                      backgroundColor: isBusy ? "#374151" : COLOR.accent,
-                      color: isBusy ? COLOR.muted : "#fff",
-                      border: "none",
-                      borderRadius: 5,
-                      padding: "0.35rem 0.75rem",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: isBusy ? "wait" : "pointer",
-                    }}
-                    onClick={() => handleSaveRow(car)}
-                    disabled={isBusy}
-                  >
-                    {isBusy ? "…" : "Save"}
-                  </button>
-                  {hasOverride && (
-                    <button
-                      style={{
-                        backgroundColor: "transparent",
-                        color: COLOR.muted,
-                        border: `1px solid ${COLOR.border}`,
-                        borderRadius: 5,
-                        padding: "0.35rem 0.6rem",
-                        fontSize: 12,
-                        cursor: isBusy ? "wait" : "pointer",
-                      }}
-                      onClick={() => handleResetRow(car)}
-                      disabled={isBusy}
-                      title="Clear override and revert to API default"
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-
-                {status && (
-                  <div
-                    style={{
-                      width: "100%",
-                      fontSize: 11,
-                      color: status.ok ? COLOR.green : COLOR.red,
-                    }}
-                  >
-                    {status.ok ? "" : "Error: "}
-                    {status.message}
+                {isOpen && (
+                  <div style={{ borderTop: `1px solid ${COLOR.border}` }}>
+                    {matchingCars.length === 0 ? (
+                      <div style={{ padding: "1rem", color: COLOR.muted, fontSize: 13 }}>
+                        No cars match "{search}".
+                      </div>
+                    ) : (
+                      matchingCars.map((car) => renderCarRow(car))
+                    )}
                   </div>
                 )}
               </div>

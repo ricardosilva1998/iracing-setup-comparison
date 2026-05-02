@@ -2,6 +2,15 @@
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
+const GARAGE_61_SUFFIX = "Garage 61 - #NAOTRAVO";
+
+// Returns the default iRacing folder path for a car, appending the team subfolder.
+// If no iracingFolderName is known, returns an empty string.
+export function defaultFolderForCar(iracingFolderName: string | null): string {
+  if (!iracingFolderName) return "";
+  return `${iracingFolderName}/${GARAGE_61_SUFFIX}`;
+}
+
 // Mirrors the slugify() function in Rust lib.rs.
 export function slugify(s: string): string {
   return s

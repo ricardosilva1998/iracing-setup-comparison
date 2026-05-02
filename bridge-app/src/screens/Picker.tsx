@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { COLOR, styles } from "../styles";
-import { slugify, browseRelativeFolder } from "../helpers";
+import { slugify, browseRelativeFolder, defaultFolderForCar } from "../helpers";
 import type { Settings, Week, Track, Car, ShopFiles } from "../types";
 
 interface Props {
@@ -95,10 +95,10 @@ export function PickerScreen({ settings, overrides, onOverridesChanged }: Props)
         setFolderFromApi(data.iracingFolderName);
         setFolderSavedMessage(null);
         setFolderError(null);
-        // Priority: persisted override > API default > empty
+        // Priority: persisted override > default (iracingFolderName/Garage 61 suffix) > empty
         const car = cars.find((c) => c.id === carId);
         const override = car ? overrides[car.name] : undefined;
-        setCurrentIracingFolder(override ?? data.iracingFolderName ?? "");
+        setCurrentIracingFolder(override ?? defaultFolderForCar(data.iracingFolderName));
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoadingFiles(false));

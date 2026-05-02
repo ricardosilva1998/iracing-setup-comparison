@@ -2295,3 +2295,31 @@ Format per entry:
 - `Oval` carClass in dropdown (MG NASCAR/oval carry-over from round 10) — not in round 31 scope.
 - VRS decision + creds (carry-over from r10).
 - Image footprint trimming (~470 MB apk transitive deps from r7; carry-over, low priority).
+
+### 2026-05-02 — frontend-dev (round 32)
+**Task:** Task A — progress bar in Bulk Download; Task B — Manage Folders accordions by carClass; Task C — default folder suffix `/<iracingFolderName>/Garage 61 - #NAOTRAVO`; Task D — version bump to 0.4.1.
+**Files:** bridge-app/src/helpers.ts, bridge-app/src/screens/Bulk.tsx, bridge-app/src/screens/Manage.tsx, bridge-app/src/screens/Picker.tsx, bridge-app/package.json, bridge-app/src-tauri/tauri.conf.json, bridge-app/src-tauri/Cargo.toml
+**Decisions:**
+- `defaultFolderForCar(iracingFolderName)` added to `helpers.ts` — single source of truth for the `<carFolder>/Garage 61 - #NAOTRAVO` default. Picker, Manage, and Bulk all import it.
+- Picker: `setCurrentIracingFolder` pre-fill changed from `override ?? data.iracingFolderName ?? ""` to `override ?? defaultFolderForCar(data.iracingFolderName)`. Override (if saved) used as-is, no suffix appended.
+- Manage `getDisplayValue`: fallback changed from `car.iracingFolderName ?? ""` to `defaultFolderForCar(car.iracingFolderName)`. Same override-as-is behaviour. Flat car list replaced with class accordions (CLASS_ORDER + alphabetical fallback); all collapsed by default; search auto-expands matching classes and shows "(N of M)" count.
+- Bulk folder resolution: `overrides[car.name] ?? (defaultFolderForCar(apiFolder) || null)`. Empty string from `defaultFolderForCar` (null apiFolder) becomes null, triggering the existing skip-with-warning path.
+- Progress bar: block now shows when `bulkRunning || isDone` — stays visible at 100% green after completion. Label shows `current / total (NN%)`. Transition: `0.2s ease` on width. Status colour: green (downloading/ok), yellow (skipped), red (error), always green when isDone.
+- `npx tsc --noEmit` inside bridge-app → clean. Root `npm run lint` → clean.
+- Fixed TS5076 `??` + `||` mixed-precedence error with explicit parentheses.
+**Open:** none new. Carry-overs from round 31 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint).
+
+### 2026-05-02 — team-qa (round 32)
+**Task:** Verify bridge 0.4.1 UI improvements — progress bar, Manage accordions, default folder helper, version bumps, no server regression.
+**Files:** none modified (verification only)
+**Decisions:**
+- `cd bridge-app && npx tsc --noEmit` → clean (no output, exit 0). PASS.
+- Root `npm run lint` (tsc --noEmit) → clean. `npm run build` → green; 4 routes unchanged (/, /compare, /api/ingest, /releases area). PASS.
+- Vite dev server `localhost:1420` → HTTP 200, body contains "iRacing Setup Bridge". PASS.
+- `defaultFolderForCar` exported at `helpers.ts:9`; GARAGE_61_SUFFIX constant contains the literal "Garage 61 - #NAOTRAVO". PASS.
+- `defaultFolderForCar` usage counts: Picker.tsx=2, Manage.tsx=3, Bulk.tsx=2. All three screens import and use the helper. PASS.
+- `grep -c "carClass|CLASS_ORDER|expanded|accordion" Manage.tsx` → 8 (threshold was ≥4). CLASS_ORDER line contains `"GT3", "GT4", "GTE", "GT2", "GTP/LMDh", "LMP2", "LMP3"`. PASS.
+- `grep -c "current / total|width.*%|isDone" Bulk.tsx` → 6 (threshold was ≥1). Progress bar markup including 100% post-completion state confirmed. PASS.
+- Version bump: all three manifest files (`bridge-app/package.json`, `bridge-app/src-tauri/tauri.conf.json`, `bridge-app/src-tauri/Cargo.toml`) report 0.4.1. PASS.
+- **Suite result:** 0 test failures; all 8 discrete checks PASS.
+**Open:** Carry-overs from round 31 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint). Tauri runtime behaviour (click interactions, accordion expand/collapse, progress bar animation) is not verifiable without a Tauri build; static source analysis confirms the markup and logic are present.

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { COLOR, styles } from "../styles";
-import { slugify } from "../helpers";
+import { slugify, defaultFolderForCar } from "../helpers";
 import type { Settings, Week, Track, Car, ShopFiles, BulkLogEntry, BulkProgress } from "../types";
 
 const SHOPS = [
@@ -142,8 +142,8 @@ export function BulkScreen({ settings, overrides }: Props) {
           continue;
         }
 
-        // Priority: persisted override > API default.
-        const folder = overrides[car.name] ?? apiFolder ?? null;
+        // Priority: persisted override > default (iracingFolderName/Garage 61 suffix).
+        const folder = overrides[car.name] ?? (defaultFolderForCar(apiFolder) || null);
 
         if (!folder) {
           const entry: BulkLogEntry = {
@@ -379,7 +379,7 @@ export function BulkScreen({ settings, overrides }: Props) {
         {bulkRunning ? "Running…" : "Start Bulk Download"}
       </button>
 
-      {bulkProgress && (
+      {(bulkRunning || isDone) && bulkProgress && (
         <div
           style={{
             marginTop: "1.5rem",
@@ -389,36 +389,51 @@ export function BulkScreen({ settings, overrides }: Props) {
             padding: "1rem",
           }}
         >
+          {/* Top row: percentage label + counter */}
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               fontSize: 13,
               color: COLOR.muted,
-              marginBottom: "0.5rem",
+              marginBottom: "0.35rem",
             }}
           >
-            <span>
-              {bulkProgress.carName} @ {bulkProgress.trackName}
+            <span style={{ fontWeight: 600, color: COLOR.text }}>
+              {isDone
+                ? "Complete"
+                : `${bulkProgress.carName} @ ${bulkProgress.trackName}`}
             </span>
             <span>
-              {bulkProgress.current} / {bulkProgress.total}
+              {bulkProgress.current} / {bulkProgress.total}{" "}
+              <span style={{ color: COLOR.text, fontWeight: 600 }}>
+                ({Math.round((bulkProgress.current / bulkProgress.total) * 100)}%)
+              </span>
             </span>
           </div>
+          {/* Progress bar */}
           <div style={styles.updateProgressTrack}>
             <div
               style={{
                 ...styles.updateProgressFill,
-                width: `${Math.round((bulkProgress.current / bulkProgress.total) * 100)}%`,
-                backgroundColor:
-                  bulkProgress.status === "error"
+                width: `${isDone ? 100 : Math.round((bulkProgress.current / bulkProgress.total) * 100)}%`,
+                backgroundColor: isDone
+                  ? COLOR.green
+                  : bulkProgress.status === "error"
                     ? COLOR.red
                     : bulkProgress.status === "skipped"
                       ? COLOR.yellow
                       : COLOR.green,
+                transition: "width 0.2s ease",
               }}
             />
           </div>
+          {/* Current item label when running */}
+          {bulkRunning && (
+            <div style={{ fontSize: 11, color: COLOR.muted, marginTop: "0.35rem" }}>
+              {bulkProgress.status === "downloading" ? "Downloading…" : bulkProgress.status}
+            </div>
+          )}
         </div>
       )}
 
