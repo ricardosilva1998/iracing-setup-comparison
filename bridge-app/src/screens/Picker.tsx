@@ -49,8 +49,12 @@ export function PickerScreen({ settings, overrides, onOverridesChanged }: Props)
         const sorted = [...rows].sort((a, b) => {
           const ac = a.setupCount ?? 0;
           const bc = b.setupCount ?? 0;
+          // Tracks with setups first; within that group sort by setupCount
+          // descending (most setups → fewest). Zero-count tracks at the end
+          // sorted alphabetically. Tiebreaker for equal counts: name.
           if (bc > 0 && ac === 0) return 1;
           if (ac > 0 && bc === 0) return -1;
+          if (bc !== ac) return bc - ac;
           return (a.name ?? "").localeCompare(b.name ?? "");
         });
         setTracks(sorted);
