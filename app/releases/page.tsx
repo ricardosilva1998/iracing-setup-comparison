@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.4.2",
+    publishedAt: "2026-05-04",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.4.2_x64_en-US.msi",
+        sizeBytes: 3300000,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.4.2/iRacing.Setup.Bridge_0.4.2_x64_en-US.msi",
+      },
+    ],
+    body: "Round 33: Picker track dropdown now sorted by setup count (most → fewest) instead of alphabetical. Zero-count tracks still listed last; alphabetical kept as tiebreaker for equal counts.",
+  },
+  {
     tagName: "bridge-v0.4.1",
     publishedAt: "2026-05-02",
     assets: [

@@ -2337,3 +2337,16 @@ Format per entry:
 - /api/latest-bridge ISR refreshed to 0.4.1 (confirmed during this round); /releases live GitHub API will reflect 0.4.1 after the 5-min ISR window (bridge-v0.4.1 is already marked "Latest" on GitHub).
 - Asset proxy verified: GET /api/bridge-asset/iRacing.Setup.Bridge_0.4.1_x64_en-US.msi → 200 application/octet-stream.
 - Carry-overs from round 31 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint).
+
+### 2026-05-04 18:00 — team-deployment (round 33)
+**Task:** Ship bridge v0.4.2 (Picker track dropdown sorted by setupCount DESC); update /releases fallback.
+**Commits:** cfb8cf4 — "feat(round 33): bridge v0.4.2 — Picker track dropdown sorts by setupCount"; Phase 2 commit pending.
+**Pushed to:** origin/main @ cfb8cf4 (Phase 1); Phase 2 push follows.
+**PR:** n/a
+**Deploy:** Phase 1 — tag bridge-v0.4.2 pushed → GitHub Actions bridge-build.yml run 25333849103 → SUCCESS (all substantive steps: Install Rust/Node, Cache, npm install, Build Tauri MSI, Locate MSI, Generate latest.json, Upload Release assets — all success). MSI: iRacing.Setup.Bridge_0.4.2_x64_en-US.msi (3,280,896 bytes). Phase 2 — railway up → /releases page updated.
+**Build time:** ~15 min (Tauri Rust cross-compile, Windows MSI)
+**Healthcheck:** GET /api/bridge-asset/iRacing.Setup.Bridge_0.4.2_x64_en-US.msi → 200 application/octet-stream (Phase 1). /releases Phase 2 post-deploy.
+**Logs after deploy (60s window):** Phase 1 build log: all steps green, no errors. Phase 2 Railway logs pending.
+**Open:**
+- /api/latest-bridge still returns "0.4.1" at Phase 1 end (ISR cache; will refresh to 0.4.2 after Phase 2 Railway redeploy clears it).
+- Carry-overs from round 32 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint).
