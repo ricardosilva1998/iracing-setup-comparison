@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.4.4",
+    publishedAt: "2026-05-10",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.4.4_x64_en-US.msi",
+        sizeBytes: 3289088,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.4.4/iRacing.Setup.Bridge_0.4.4_x64_en-US.msi",
+      },
+    ],
+    body: "Round 35: real wrench logo for the Windows installer, app window, taskbar, and desktop shortcut — replaces the placeholder solid-teal block. Same wrench design as the website favicon for brand consistency.",
+  },
+  {
     tagName: "bridge-v0.4.3",
     publishedAt: "2026-05-10",
     assets: [
