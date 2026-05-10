@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.4.3",
+    publishedAt: "2026-05-10",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.4.3_x64_en-US.msi",
+        sizeBytes: 3256320,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.4.3/iRacing.Setup.Bridge_0.4.3_x64_en-US.msi",
+      },
+    ],
+    body: "Round 34: fixes the bridge UI freeze (\"crashes for a few seconds and then comes back\") when searching for setups. Tauri commands are now async, so HTTP calls run on the Tokio worker pool instead of blocking the main webview thread. Also fixes the same freeze during downloads and the Settings → Save & Test Connection click.",
+  },
+  {
     tagName: "bridge-v0.4.2",
     publishedAt: "2026-05-04",
     assets: [
