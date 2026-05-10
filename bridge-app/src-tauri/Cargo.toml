@@ -1,6 +1,6 @@
 [package]
 name = "iracing-setup-bridge"
-version = "0.4.2"
+version = "0.4.3"
 description = "iRacing Setup Bridge — desktop app to download setups from the comparison site"
 authors = ["Ricardo Silva"]
 edition = "2021"
@@ -25,7 +25,9 @@ tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # reqwest with rustls-tls so the Windows binary has no OpenSSL dependency.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+# Async-only (no `blocking` feature) so commands run on the Tokio worker pool
+# instead of blocking the Tauri main thread (round 34 — UI freeze fix).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 # keyring v3 uses the OS credential store (Windows Credential Manager on Windows).
 keyring = { version = "3", features = ["windows-native"] }
 # dirs for locating the OS config directory (%APPDATA% on Windows).

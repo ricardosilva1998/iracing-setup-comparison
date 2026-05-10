@@ -357,7 +357,7 @@ struct ConnectionResult {
 }
 
 #[tauri::command]
-fn test_connection() -> Result<ConnectionResult, String> {
+async fn test_connection() -> Result<ConnectionResult, String> {
     let file = read_settings_file().map_err(|e| e.to_string())?;
     let password = match load_credentials() {
         Ok(p) => p,
@@ -370,13 +370,14 @@ fn test_connection() -> Result<ConnectionResult, String> {
     };
 
     let url = format!("{}/admin", file.server_url.trim_end_matches('/'));
-    let resp = reqwest::blocking::Client::builder()
+    let resp = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?
         .get(&url)
         .basic_auth("admin", Some(&password))
         .send()
+        .await
         .map_err(|e| format!("network error: {}", e))?;
 
     if resp.status().is_success() {
@@ -398,19 +399,20 @@ fn test_connection() -> Result<ConnectionResult, String> {
 }
 
 #[tauri::command]
-fn fetch_picker(endpoint: String) -> Result<serde_json::Value, String> {
+async fn fetch_picker(endpoint: String) -> Result<serde_json::Value, String> {
     let file = read_settings_file().map_err(|e| e.to_string())?;
 
     // Strip any leading slash; the picker endpoints are all under /api/picker/.
     let clean = endpoint.trim_start_matches('/');
     let url = format!("{}/api/picker/{}", file.server_url.trim_end_matches('/'), clean);
 
-    let resp = reqwest::blocking::Client::builder()
+    let resp = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?
         .get(&url)
         .send()
+        .await
         .map_err(|e| format!("network error: {}", e))?;
 
     if !resp.status().is_success() {
@@ -418,11 +420,12 @@ fn fetch_picker(endpoint: String) -> Result<serde_json::Value, String> {
     }
 
     resp.json::<serde_json::Value>()
+        .await
         .map_err(|e| format!("JSON parse error: {}", e))
 }
 
 #[tauri::command]
-fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
+async fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
     let file = read_settings_file().map_err(|e| e.to_string())?;
     let password = load_credentials().map_err(|e| e.to_string())?;
 
@@ -524,22 +527,25 @@ fn download_setups(args: DownloadArgs) -> Result<DownloadResult, String> {
         )
     };
 
-    let mut resp = reqwest::blocking::Client::builder()
+    let resp = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?
         .get(&zip_url)
         .basic_auth("admin", Some(&password))
         .send()
+        .await
         .map_err(|e| format!("network error downloading zip: {}", e))?;
 
     if !resp.status().is_success() {
         return Err(format!("zip endpoint returned HTTP {}", resp.status()));
     }
 
-    let mut body: Vec<u8> = Vec::new();
-    resp.read_to_end(&mut body)
-        .map_err(|e| format!("error reading response body: {}", e))?;
+    let body = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("error reading response body: {}", e))?
+        .to_vec();
 
     let cursor = std::io::Cursor::new(body);
     let mut archive = zip::ZipArchive::new(cursor)

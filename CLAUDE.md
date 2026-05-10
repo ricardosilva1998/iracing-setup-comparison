@@ -2,34 +2,43 @@
 
 ## Project Overview
 
-A web app that aggregates the fastest lap times published by major iRacing setup shops and presents a comparison table by **car / class / category / season-week**. Goal: a driver picks "Road > GT3 > Season X Week 5" and sees who's quickest at each shop.
+A web app that aggregates the **fastest lap times** published by major iRacing setup shops and lets a driver pick a Week → Track → Car combo to see who's quickest at each shop. Companion **desktop bridge app** (Tauri) downloads `.sto` setup files directly into the user's iRacing setups folder structure.
 
-Status: **greenfield**. Project bootstrapped 2026-04-29. No code yet. No deploy target. Stack to be locked once data-source feasibility is confirmed.
+Status: **shipped in production**, ~33 rounds deep. 5 active shops scraped weekly. ~118 distinct cars × ~128 distinct tracks × 13 weeks = thousands of comparison cells. File-download pipelines live for Grid-and-Go (round 21) + HYMO Setups (round 30); other 3 shops surface lap times + deep-links only.
 
-## Target Setup Shops (under investigation)
+Last refreshed: 2026-05-07 (post round 33).
 
-| Shop | URL | Public lap-time data? |
-|---|---|---|
-| Grid-and-Go | https://app.grid-and-go.com | **No public.** SPA behind login. Marketing site has no leaderboard. |
-| HYMO Setups | https://www.hymosetups.com | **Partial.** Public marketing + product pages render in SSR. `/setups` page exists (43 KB SSR). Robots-friendly outside `/dashboard`, `/profile`, `/checkout`. Needs detail-page scrape to confirm whether preview lap times are published. |
-| Coach Dave Academy | https://coachdaveacademy.com/product-category/iracing-setups/ | **Cloudflare blocks plain HTTP clients** (HTTP 103 / 000). WooCommerce store. `/wp-json/` blocked by robots. Needs headless browser to fetch — likely ToS violation. |
-| P1Doks | https://p1doks.com | **No public lap-time data.** SPA. `api.p1doks.com` is reachable but every endpoint requires auth (401). Site sells setup packs + telemetry to paying users; nothing exposed for unauthenticated visitors. |
+## Active Setup Shops
 
-**Reality check:** None of these shops publish a "fastest lap per week per car" leaderboard for free. Most lap-time signals are either behind login, inside paid telemetry products, or not published at all. The product premise needs to be reconciled with this — see Open Questions below.
+| Shop | URL | Catalog scrape | File download |
+|---|---|---|---|
+| HYMO Setups | https://www.hymosetups.com | Public JSON API (`api.hymosetups.com/api/v1/products/search`) | **Authenticated** Bearer token via `/api/v1/login` → two-step download (round 30) |
+| Grid-and-Go | https://app.grid-and-go.com | **Authenticated** via user's PLUS Cognito credential → `/datapacks` API (round 2) | Cognito-bearer detail API → pre-signed S3 URLs (round 21) |
+| GO Setups | https://gosetups.gg | Public WC Store API + public Google Sheet for lap times (round 10) | None yet (catalog metadata + deep-link only) |
+| Majors Garage | https://majorsgarage.com | Public Bubble.io Data API (round 10) | None yet |
+| P1Doks | https://p1doks.com | Public catalog endpoint `POST /ql/data-packs` — no auth header sent on catalog reads (round 11) | None yet (Cognito creds pre-positioned for future round) |
 
-## Tech Stack (proposed, not yet locked)
+**Coach Dave Academy** dropped in round 10 (Cloudflare-blocked + ToS-uncertain).
 
-Default proposal — mirror the sibling `iracing-leaderboard` project:
+**Virtual Racing School (VRS)** investigated in round 14, dropped: reCAPTCHA v3 on login + free-tier yield is sub-1% delta on the existing comparison.
 
-- **Framework:** Next.js 16 (App Router) + TypeScript
-- **DB:** SQLite via Prisma 7 + better-sqlite3 adapter
-- **Styling:** Tailwind CSS v4 (dark theme via `@theme` directive)
-- **Charts (later):** Recharts (client-only via dynamic import)
-- **Scraper:** Node + `undici` for plain HTTP. **Playwright** if a target requires JS rendering (P1Doks SPA, Coach Dave Cloudflare).
-- **Scheduling:** Cron-style worker (Railway cron job) — weekly refresh aligned to iRacing season-week rollover (Tuesday 00:00 UTC).
-- **Deployment:** Railway (Dockerfile, node:22-alpine, standalone output) — same pattern as `iracing-leaderboard`. Not deployed yet.
+## Tech Stack
 
-Rationale for matching the sibling project: zero learning curve, can copy the Dockerfile / `railway.toml` / Prisma adapter wiring.
+**Web app** (Next.js):
+- **Framework:** Next.js 16 (App Router, Turbopack) + TypeScript strict.
+- **DB:** SQLite via Prisma 7 + `better-sqlite3` adapter. Production DB on Railway Volume (`/app/data/dev.db`); schema additive changes self-apply via Dockerfile entrypoint `npx --yes prisma db push --accept-data-loss --skip-generate` (round 29-fix).
+- **Styling:** Tailwind CSS v4 (dark theme via `@theme` directive). One client component (`CompareFilters` after round 19); everything else is server components.
+- **Scraping:** Node + `undici` for plain HTTP. **Playwright** for Grid-and-Go (Cognito SPA login).
+- **Auth:** Basic Auth via Next 16 `proxy.ts` middleware (renamed from `middleware.ts`). Constant-time compare. Gates `/admin/:path*` + `/api/files/:path*`. `/api/ingest` deliberately ungated (its own bearer-token).
+- **Cron:** GitHub Actions weekly workflow (`.github/workflows/refresh-data.yml`, Tuesdays 00:30 UTC) calls `POST /api/ingest?shop=all` with the `INGEST_SECRET`.
+- **Deploy:** Railway. Single service, persistent volume at `/app/data/`. Public URL `https://iracing-setup-comparison-production.up.railway.app`.
+
+**Bridge app** (`bridge-app/` subdirectory, round 22b+):
+- **Framework:** Tauri v2 (Rust + native webview) — ~3 MB MSI vs Electron's ~150 MB.
+- **UI:** React + plain inline styles (no Tailwind in the webview to keep the build slim).
+- **Build:** GitHub Actions Windows runner (`.github/workflows/bridge-build.yml`) on `bridge-v*` tag push. Signing keypair via `TAURI_PRIVATE_KEY` + `TAURI_KEY_PASSWORD` GitHub secrets. Emits `.msi` installer + `latest.json` updater manifest, both attached to the GitHub Release.
+- **Distribution:** `/releases` page on the website lists releases (live via `GITHUB_TOKEN` proxy + `FALLBACK_RELEASES` static array). `.msi` binaries served via `/api/bridge-asset/[filename]` proxy because the GitHub repo is private.
+- **In-app updater:** Tauri v2 `tauri-plugin-updater` with `installMode: "basicUi"` (visible installer dialog). Updater polls `/api/latest-bridge` (manifest proxy with `GITHUB_TOKEN`).
 
 ## Commands
 
@@ -38,108 +47,206 @@ Rationale for matching the sibling project: zero learning curve, can copy the Do
 | `npm run dev` | Next dev server (Turbopack) on port 3000. |
 | `npm run build` | Production build. |
 | `npm run start` | Run the production build. |
-| `npm run lint` | `tsc --noEmit` only (eslint flat config blocked by `config-protection` hook). |
-| `npm run db:push` | Sync `prisma/schema.prisma` to SQLite. |
-| `npm run db:seed` | Seed shops, categories, current season. |
-| `npm run scrape:hymo` | Pull HYMO catalog from `api.hymosetups.com` (unauthenticated). |
-| `npm run scrape:grid-and-go` | Login via Cognito, pull `/datapacks` for the active season. Requires `GRID_AND_GO_*` in `.env`. |
+| `npm run lint` | `tsc --noEmit` only (no eslint flat config; `config-protection` hook blocks creating one). |
+| `npm run db:push` | Sync `prisma/schema.prisma` to local SQLite. |
+| `npm run db:seed` | Seed shops, categories, current season. Idempotent. |
+| `npm run scrape:hymo` | Pull HYMO catalog (unauthenticated). |
+| `npm run scrape:grid-and-go` | Cognito login → fetch `/datapacks`. Requires `GRID_AND_GO_*` in `.env`. |
+| `npm run scrape:gosetups` | WC Store API + Google Sheet for lap times. |
+| `npm run scrape:majors-garage` | Bubble.io public Data API. |
+| `npm run scrape:p1doks` | Public `/ql/data-packs` endpoint (no auth). |
+| `npm run probe:gng-files` | Round-21 reference: GnG file-download surface probe. Not run in normal ops. |
+
+Bridge app (in `bridge-app/`):
+
+| Command | What it does |
+|---|---|
+| `npm install` | Pull deps for the Vite + Tauri build. |
+| `npm run dev` | Vite dev server at localhost:1420 (no Tauri runtime; `invoke` calls fail — for UI smoke only). |
+| `npm run tauri dev` | Full Tauri desktop dev (requires Rust toolchain locally). |
+| `npm run tauri build` | Build `.msi` locally (Windows only; CI builds via GitHub Actions). |
 
 ## Project Structure
 
 ```
 iracing-setup-comparison/
 ├── app/
-│   ├── compare/page.tsx        # Server component, reads searchParams, renders comparison table
-│   ├── page.tsx                # Marketing-style home
-│   ├── layout.tsx
-│   ├── globals.css             # Tailwind v4 @theme tokens (dark gray-950 body)
-│   └── generated/prisma/       # Prisma client output (gitignored)
+│   ├── page.tsx                          # Home: 13 week cards (round 15)
+│   ├── week/[weekNum]/page.tsx           # Track cards (round 15)
+│   ├── week/[weekNum]/track/[trackId]/page.tsx       # Cars × shops table (round 15, sortable round 17)
+│   ├── week/[weekNum]/track/[trackId]/car/[carId]/page.tsx  # Per-shop detail (round 20)
+│   ├── compare/page.tsx                  # Round-12 redirect to /
+│   ├── admin/page.tsx                    # Scraping status + recent runs (round 18)
+│   ├── admin/files/[datapackId]/page.tsx # GnG file browser (round 21)
+│   ├── releases/page.tsx                 # Bridge app downloads (round 22c, GitHub API + fallback)
+│   ├── layout.tsx                        # Wrench logo, no banner, no Compare nav (rounds 18+)
+│   ├── globals.css                       # Tailwind v4 @theme tokens
+│   ├── icon.svg                          # Wrench favicon
+│   ├── api/
+│   │   ├── ingest/route.ts               # POST bearer-gated; runs migrateTracks → migrateCars → 5 scrapers
+│   │   ├── picker/{weeks,tracks,cars,files,classes,all-cars}/route.ts  # Public picker JSON for bridge
+│   │   ├── latest-bridge/route.ts        # GitHub Releases manifest proxy (round 23-fix)
+│   │   ├── bridge-asset/[filename]/route.ts          # GitHub Releases binary proxy (round 26-fix)
+│   │   ├── files/[datapackId]/{route,zip,[filename]}.ts        # GnG file routes (rounds 21, 22a)
+│   │   └── files/hymo/[productId]/{route,zip,[filename]}.ts    # HYMO file routes (round 30)
+│   └── generated/prisma/                 # Prisma client output (gitignored)
 ├── components/
-│   ├── CompareFilters.tsx      # Plain <form method=get>; Season + Class + Week (Category removed in r6); no client JS
-│   ├── CompareTable.tsx        # Pivot: rows = (car, track), cols = shop
-│   └── ScrapingLegend.tsx      # Status dot per shop
+│   ├── CompareFilters.tsx                # Auto-submit on change (round 19); hidden sortBy/sortDir inputs (round 17)
+│   ├── CompareTable.tsx                  # Sortable shop columns; chevron + blue link affordance (round 22a)
+│   ├── ScrapingLegend.tsx                # Used only on /admin (moved out of public in round 18)
+│   ├── WeekCard.tsx + TrackCard.tsx      # Uniform h-24 cards with line-clamp (round 16)
 ├── lib/
-│   ├── compare-data.ts         # getCompareData(filters) — single server-side fetch
-│   ├── car-class-canonical.ts  # canonicalFromHymoClass / canonicalFromName / lookupCanonicalClass (round 3)
-│   ├── db.ts                   # Prisma client singleton, better-sqlite3 adapter
-│   ├── seed.ts                 # Idempotent seed
-│   └── types.ts                # ScrapingStatus union, CompareCell/Row types
+│   ├── compare-data.ts                   # getWeekList, getTrackList, getTrackCompareData
+│   ├── car-class-canonical.ts            # 12 canonical classes (round 3)
+│   ├── car-name-canonical.ts             # 90+ alias map; canonicalizeCarName (round 13)
+│   ├── iracing-car-folders.ts            # canonical-name → iRacing folder map (round 24)
+│   ├── track-canonical.ts                # 45+ canonical tracks; canonicalizeTrackName (round 9)
+│   ├── shop-slug.ts                      # Shop slug ↔ name helpers (round 17)
+│   ├── files-manifest.ts                 # GnG file cache + download (round 21)
+│   ├── admin-data.ts                     # /admin page data getter (round 18)
+│   ├── migrate-cars.ts + migrate-tracks.ts  # Idempotent canonicalisation migrators
+│   ├── scrape/{hymo,grid-and-go,gosetups,majors-garage,p1doks}.ts  # Per-shop scrapers
+│   ├── scrape/grid-and-go-auth.ts + hymo-files-auth.ts  # Bearer-token cache helpers (rounds 21, 30)
+│   ├── scrape/hymo-files.ts              # HYMO two-step download + ZIP-in-ZIP extract (round 30)
+│   ├── db.ts, seed.ts, types.ts
 ├── prisma/
-│   └── schema.prisma           # 9 models: Shop, Season, SeasonWeek, Category, Car (name-unique), Track, SetupListing (with series), LapTime, ScrapeRun
+│   └── schema.prisma                     # 9 models + Car.name @unique + SetupListing.externalId (round 29)
 ├── scripts/
-│   ├── scrape-hymo.ts          # POST api.hymosetups.com/api/v1/products/search → upsert
-│   ├── scrape-grid-and-go.ts   # Playwright login → GET /datapacks → upsert
-│   └── probe-grid-and-go.ts    # Auth probe (round 2 artefact); not run in normal ops
-├── Dockerfile, railway.toml    # Railway deploy (not yet provisioned)
-└── .env.example                # All env vars documented
+│   ├── scrape-{hymo,grid-and-go,gosetups,majors-garage,p1doks}.ts  # CLI wrappers
+│   ├── probe-{grid-and-go,grid-and-go-files,p1doks,hymo-files,vrs}.ts  # Reference probes
+├── proxy.ts                              # Next 16 middleware (Basic Auth gate on /admin + /api/files)
+├── Dockerfile                            # Volume-aware entrypoint runs `prisma db push` on boot
+├── .github/workflows/
+│   ├── refresh-data.yml                  # Tuesday 00:30 UTC cron → POST /api/ingest?shop=all
+│   └── bridge-build.yml                  # On bridge-v* tag → Windows runner builds .msi + latest.json
+├── bridge-app/                           # Tauri desktop app (round 22b+)
+│   ├── src/                              # React UI: App.tsx + screens/{Settings,Picker,Bulk,Manage}.tsx
+│   ├── src-tauri/                        # Rust glue: lib.rs (commands) + Cargo.toml + tauri.conf.json
+│   └── package.json + index.html + vite.config.ts
+└── .env.example                          # All env vars documented
 ```
 
 ## Key Patterns
 
-- **Composite-key upsert for SetupListing:** `(shopId, carId, trackId, seasonWeekId)` — guarantees one cell per shop per (car, track, week).
-- **0..1 LapTime per SetupListing:** stored separately so `source` (`SHOP_PUBLISHED` / `DRIVER_SUBMITTED` / `UNKNOWN`) is visible. Scrapers pick the **fastest** time when multiple sessions exist for the same triple.
-- **Polite scraping:** `politeFetch()` enforces ≥5s delay + jitter, retries 429/503 with exponential backoff, respects robots.txt and `Retry-After`. UA: `iracing-setup-comparison/0.1 (+contact: <SCRAPER_CONTACT_EMAIL>)`.
-- **Secret hygiene in scrapers:** `redact()` for cred metadata, `sanitise()` to strip secrets from error messages, `safeUrl()` to strip OAuth params from logged URLs. No traces / videos / screenshots written; tokens only live in browser context.
-- **/compare is a single server component** reading `searchParams` (Next 16 async API). No client JS, no useState. Table renders dim-themed Tailwind cells; horizontal scroll with sticky-left "Car" column.
-- **Scraping status as data, not just metadata.** `Shop.scrapingStatus` drives the UI ("Login required" / "Cloudflare blocked" / etc. → amber/red dot in legend, italic label in cells). Round 2 added `AUTH_SCRAPED` for Grid-and-Go.
+- **Composite-key upsert for SetupListing:** `(shopId, carId, trackId, seasonWeekId)`.
+- **0..1 LapTime per SetupListing:** stored separately; `source` (`SHOP_PUBLISHED` / `DRIVER_SUBMITTED` / `UNKNOWN`).
+- **Three canonicalisation layers** (each idempotent, hooked into `/api/ingest`):
+  - `lib/car-class-canonical.ts` — 12 stable class values, HYMO authoritative (round 3).
+  - `lib/car-name-canonical.ts` + `lib/migrate-cars.ts` — `Car.name @unique`, alias map, MG slug-leak strip pass (round 13). 90+ alias entries.
+  - `lib/track-canonical.ts` + `lib/migrate-tracks.ts` — alias map (round 9). 45+ canonical tracks.
+- **iRacing folder mapping** (`lib/iracing-car-folders.ts`, round 24): canonical car name → iRacing-internal setup folder name (`porsche9922cup` etc). Surfaced via `/api/picker/cars.iracingFolderName`. Bridge can override per-car via UI; persisted in OS config.
+- **File caching** (`lib/files-manifest.ts` + `lib/scrape/hymo-files.ts`): lazy fetch from upstream shop API → write to Railway volume at `/app/data/files/<shop>/<id>/<filename>`. Cache hit = serve from disk; cache miss = polite-throttled fetch + extract.
+- **Polite scraping:** ≥5s + 1-2s jitter delay; retry 429/503 with exponential backoff; UA identifies bot + contact email. Per-process module-scope semaphores prevent parallel fetches against the same upstream.
+- **Secret hygiene:** `redact()` for cred metadata, `sanitise()` to strip secrets from error messages, `safeUrl()` to strip OAuth params. No traces / videos / screenshots persisted. Tokens in browser context only; in-memory module caches with TTL refresh.
+- **3-level navigation:** home (week cards) → /week/N (track cards) → /week/N/track/T (cars × shops table) → /week/N/track/T/car/C (per-shop detail).
+- **Dim-when-zero cards** (round 16): tracks/weeks with no setups visually de-emphasised but always present.
+- **Per-shop sortable columns** (round 17): server-side sort via `?sortBy=<slug>&sortDir=asc|desc` URL params.
+- **Scraping status as data:** `Shop.scrapingStatus` (SCRAPED / AUTH_SCRAPED / LOGIN_WALLED / CLOUDFLARE_BLOCKED / API_LOCKED). All 5 active shops are SCRAPED or AUTH_SCRAPED post-round-11.
 
 ## Environment Variables
 
 | Var | Required by | Notes |
 |---|---|---|
 | `DATABASE_URL` | Prisma | `file:./dev.db` for dev. |
-| `DATABASE_PATH` | Optional | Used in Docker / Railway runtime to override the SQLite path. |
-| `SCRAPER_CONTACT_EMAIL` | Both scrapers | Sent in `User-Agent` header so target shops can identify the bot. Defaults to `ricardomrbs1998@gmail.com`. |
-| `GRID_AND_GO_EMAIL` | `scrape:grid-and-go` | Email of a Grid-and-Go account. The user is on PLUS, which grants access to `/datapacks` items tagged `all` and `plus`. |
-| `GRID_AND_GO_PASSWORD` | `scrape:grid-and-go` | Password for that account. **Never logged. Never committed.** Only `.env` should hold a real value. |
+| `DATABASE_PATH` | Production | Railway runtime overrides to `/app/data/dev.db` (volume mount). |
+| `SCRAPER_CONTACT_EMAIL` | All scrapers | UA contact. Defaults to `ricardomrbs1998@gmail.com`. |
+| `GRID_AND_GO_EMAIL` + `GRID_AND_GO_PASSWORD` | GnG scraper + GnG file routes | PLUS-tier subscription credential. |
+| `HYMO_EMAIL` + `HYMO_PASSWORD` | HYMO file routes (round 30) | Pro-tier subscription. |
+| `P1DOKS_EMAIL` + `P1DOKS_PASSWORD` | None today | Set on Railway since round 11; future-proofing if the public catalog flips gated. |
+| `INGEST_SECRET` | `/api/ingest` bearer auth | 64-char hex via `openssl rand -hex 32`. Mirrored in 3 places: local `.env`, Railway, GitHub Actions repo secret (for the cron). |
+| `ADMIN_USER` + `ADMIN_PASSWORD` | `/admin` Basic Auth (round 18) + `/api/files/*` | `admin` / 16-char base64 password. Required ≥12 chars by middleware (else returns 503). |
+| `GITHUB_TOKEN` | `/api/latest-bridge` + `/api/bridge-asset` + `/releases` (round 23-fix, 26-fix, 22c) | Fine-grained PAT, read-only **Contents** scope on this repo. Set on Railway only. |
 
-### Grid-and-Go credential flow
+GitHub Actions repo secrets (separate from Railway):
+- `INGEST_SECRET` — for the weekly cron's `POST /api/ingest` bearer.
+- `TAURI_PRIVATE_KEY` + `TAURI_KEY_PASSWORD` — bridge app updater signing.
 
-1. The scraper reads `GRID_AND_GO_EMAIL` + `GRID_AND_GO_PASSWORD` from `.env` via `dotenv/config`.
-2. Headless Chromium navigates to `https://app.grid-and-go.com/`, waits for the SPA to render, clicks the "SIGN IN" trigger in the TopNav.
-3. The SPA redirects to `https://grid-and-go-auth.auth.eu-central-1.amazoncognito.com/login?response_type=code&client_id=1nqqluo9th1iajur09j2amd63p&redirect_uri=https://app.grid-and-go.com&scope=openid+email&code_challenge_method=S256` (Cognito Hosted UI, PKCE).
-4. The scraper fills `input[name='username']:visible` + `input[name='password']:visible` (the form renders twice for mobile/desktop; we pick the visible one), clicks `input[name='signInSubmitButton']:visible`.
-5. Cognito 302s back to `https://app.grid-and-go.com/?code=...`; the SPA exchanges the code for an `id_token` at `/oauth2/token` and stores it in localStorage.
-6. The scraper reads `localStorage.id_token` and calls `GET https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com/datapacks?year=2026&season=2` with `Authorization: Bearer <id_token>`. One API call returns the entire season's datapacks.
-7. Browser context is closed in `finally`. Tokens are never persisted to disk or DB. The id_token is short-lived (~1h Cognito default); each scraper run logs in fresh.
+### Grid-and-Go credential flow (legacy round-2 reference; unchanged)
 
-If Cognito ever requires MFA / captcha / SMS for this account, the scraper will fail at step 4 and **must not** be modified to bypass — the Round 2 brief explicitly draws that line.
+1. Reads `GRID_AND_GO_EMAIL` + `GRID_AND_GO_PASSWORD` from `.env` via `dotenv/config`.
+2. Headless Chromium navigates to `https://app.grid-and-go.com/`, clicks "SIGN IN", redirects to Cognito Hosted UI (`grid-and-go-auth.auth.eu-central-1.amazoncognito.com`, PKCE).
+3. Fills `username`/`password`, clicks `signInSubmitButton`.
+4. Cognito 302s back; SPA exchanges code for `id_token` (1h TTL) + `access_token` (used by file routes per round 21 probe). Bridge stores tokens in module-scope `lib/scrape/grid-and-go-auth.ts` cache with TTL refresh.
+5. `GET https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com/datapacks?year=YYYY&season=N` returns the catalog. File downloads use the same access_token against the GnG detail API → pre-signed S3 URLs.
 
-## Open Questions
+If Cognito ever requires MFA / captcha / SMS, the scraper fails and must not be modified to bypass.
 
-(Answers in **bold** were resolved in round 1/2.)
+### HYMO credential flow (round 30)
 
-1. **What counts as a "fastest time"?** **(a) Shop-published times.** Round 2 confirmed: HYMO publishes a `lap_time_ms` for every product (952 items for iRacing); Grid-and-Go publishes a `laptime` (seconds, float) for every datapack (706 items for 2026 S2). Both are SHOP_PUBLISHED reference times, not crowd-sourced — this is plenty for the MVP. (b/c/d remain options for v2.)
-2. **"Week"** — **iRacing per-season Week 1..13** (the 13th week is the rest week). HYMO uses an absolute index across seasons (S1 = weeks 1..14, S2 = weeks 15..28); the scraper coerces to 1..13 with `((week - 1) % 14) + 1` and skips week 14 (rest). Grid-and-Go uses iRacing-native 1..13 directly. Single current season for now (`2026 S2`) — schema supports historical, just need to seed earlier `Season` rows.
-3. **"Category" + "Class"** — **Category = iRacing top-level (Road / Oval / Sports Car / Formula / Dirt Road / Dirt Oval)** stored as a `Category` table. **carClass = canonical car-class string** (GT3, GT4, GTE, GT2, GTP/LMDh, LMP2, LMP3, TCR, PCUP, PCC, Formula, Production) — 12 stable values. Round 3 resolved the round-2 fragmentation by making `Car.name` uniquely keyed and resolving class via `lib/car-class-canonical.ts` (HYMO is authoritative; GnG defers via `lookupCanonicalClass`). Per-listing series labels live on `SetupListing.series` for display only — they no longer participate in identity.
-4. **Scraping legality.** **Resolved per shop:**
-   - HYMO: robots.txt allows-all on both `www.` and `api.` hosts. Public unauthenticated JSON API. Low risk.
-   - Grid-and-Go: Cognito Hosted UI + PKCE OAuth, no captcha, no MFA, no anti-bot WAF. We use the user's own paid PLUS credential to fetch data they're entitled to access (no privilege escalation, no scraping past a gate they aren't on the right side of). Reasonable risk for a private MVP given the user authorised it.
-   - Coach Dave: Cloudflare-protected. Still untouched in round 2. Would require headless browser + Cloudflare bypass — not worth the ToS risk.
-   - P1Doks: API fully auth-walled. Untouched.
-5. **Rate / cache policy.** **Implemented:** 1 req per 5s ± 2s jitter, single concurrency, retry 429/503 with exponential backoff, respect `Retry-After` header. UA identifies the bot + contact email. **(Q5 implicit answer = private MVP — no public web surface yet.)**
+1. `lib/scrape/hymo-files-auth.ts` reads `HYMO_EMAIL` + `HYMO_PASSWORD`.
+2. `POST https://api.hymosetups.com/api/v1/login` with `{email, password, remember_me: false}` → returns `{data: {access_token, refresh_token, expires_in: 3600}}` (Laravel-style envelope).
+3. Module-scope token cache, 50-min TTL (refresh 10 min early).
+4. Two-step download: `POST /api/v1/downloads/links {product_id}` → returns signed URL + `expires_in_minutes: 15` → `GET <signedUrl>` returns ZIP. HYMO ships ZIP-in-ZIP; `lib/scrape/hymo-files.ts` does a double-extract before caching to volume.
+
+## Routes
+
+**Public:**
+- `/` — week cards (home).
+- `/week/[weekNum]` — track cards.
+- `/week/[weekNum]/track/[trackId]` — sortable cars × shops comparison table.
+- `/week/[weekNum]/track/[trackId]/car/[carId]` — per-shop detail with Open setup / Browse files / Download all .zip CTAs.
+- `/compare?...` — 307 redirect to `/?...` (round 12 invariant).
+- `/releases` — bridge app downloads.
+- `/api/picker/{weeks,tracks,cars,files,classes,all-cars}` — JSON for the bridge.
+- `/api/latest-bridge` — Tauri updater manifest proxy.
+- `/api/bridge-asset/[filename]` — Tauri updater binary proxy.
+
+**Bearer-auth (`INGEST_SECRET`):**
+- `/api/ingest?shop=all|hymo|grid-and-go|gosetups|majors-garage|p1doks` — POST only.
+
+**Basic-auth (`ADMIN_USER`/`ADMIN_PASSWORD`, gated by `proxy.ts`):**
+- `/admin` — scraping status dashboard.
+- `/admin/files/[datapackId]` — GnG file browser.
+- `/api/files/[datapackId]` — GnG manifest.
+- `/api/files/[datapackId]/[filename]` — GnG file stream.
+- `/api/files/[datapackId]/zip` — GnG bulk ZIP.
+- `/api/files/hymo/[productId]` — HYMO manifest.
+- `/api/files/hymo/[productId]/[filename]` — HYMO file stream.
+- `/api/files/hymo/[productId]/zip` — HYMO bulk ZIP.
 
 ## Deployment
 
-**Platform:** Railway (default per global instructions).
+**Web app (Next.js → Railway):**
+- Project `164f2e76-c754-47dd-8c16-05cc6f264837`, service `b40601ae-dfc6-4e6c-aa2c-7b5538b87c06`.
+- Public URL: https://iracing-setup-comparison-production.up.railway.app.
+- Volume at `/app/data/` (5 GB allocated; ~50 MB used: SQLite DB + cached `.sto`/`.zip` files).
+- GitHub auto-deploy is **NOT** wired; ship via `railway up --detach` from the project dir.
+- Schema additive changes self-apply on boot via Dockerfile entrypoint `npx --yes prisma db push --accept-data-loss --skip-generate` (round 29-fix).
 
-**GitHub repo:** https://github.com/ricardosilva1998/iracing-setup-comparison (private).
+**Bridge app (Tauri → GitHub Releases):**
+- Build via tag push: `git tag bridge-v0.X.Y && git push origin bridge-v0.X.Y`.
+- GitHub Actions Windows runner (`.github/workflows/bridge-build.yml`) compiles + signs + uploads `.msi` + `latest.json` to the GitHub Release.
+- Filename uses dots (round 27-fix invariant): `iRacing.Setup.Bridge_X.Y.Z_x64_en-US.msi` (Tauri's space-named output gets renamed by `softprops/action-gh-release`; workflow templates the URL with the dotted form).
+- Manifest URL points to `/api/bridge-asset/<filename>` not GitHub directly (private-repo workaround, round 26-fix).
+- After each successful build, prepend the new entry to `app/releases/page.tsx`'s `FALLBACK_RELEASES` array.
 
-**Railway:**
-- Project: `iracing-setup-comparison` (id `164f2e76-c754-47dd-8c16-05cc6f264837`)
-- Service: `iracing-setup-comparison` (id `b40601ae-dfc6-4e6c-aa2c-7b5538b87c06`)
-- Environment: `production`
-- Public URL: https://iracing-setup-comparison-production.up.railway.app
-- First deploy: 2026-04-29 (round 4)
+**Cron:**
+- `.github/workflows/refresh-data.yml` fires Tuesdays 00:30 UTC → `curl -X POST /api/ingest?shop=all`.
+- Idempotent: running migrations + scrapers against an already-canonical DB produces zero orphans.
 
-**Environment variables on Railway** (set, including secrets via `--stdin`):
-`DATABASE_URL=file:./dev.db`, `DATABASE_PATH=/app/dev.db`, `SCRAPER_CONTACT_EMAIL=ricardomrbs1998@gmail.com`, `GRID_AND_GO_EMAIL`, `GRID_AND_GO_PASSWORD`.
+**Manual ingest (production):**
+```bash
+curl -X POST -H "Authorization: Bearer $(grep ^INGEST_SECRET .env | cut -d= -f2-)" \
+  "https://iracing-setup-comparison-production.up.railway.app/api/ingest?shop=all" \
+  --max-time 600
+```
 
-**Redeploy:** push to `main` (Railway picks up via the linked GitHub repo) or run `railway up` from the project directory while linked. Either path rebuilds the Docker image, including a fresh `db:push` + `db:seed` during the build stage.
+**Secret rotation:**
+- `INGEST_SECRET`: rotate in 3 places at once (local `.env`, Railway via `railway variables --set`, GitHub Actions repo secret via `gh secret set`).
+- `ADMIN_PASSWORD`: rotate via `NEW=$(openssl rand -base64 16); railway variables --set "ADMIN_PASSWORD=$NEW"; sed -i '' "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$NEW|" .env`.
+- `GITHUB_TOKEN`: regenerate at https://github.com/settings/personal-access-tokens; `railway variables --set "GITHUB_TOKEN=<new>"`.
+- `TAURI_PRIVATE_KEY`: regenerate via `npx @tauri-apps/cli signer generate -w ~/.tauri-bridge`; update `tauri.conf.json` `plugins.updater.pubkey`; users on the prior key need a manual reinstall once.
 
-**Open: production data ingestion.** The standalone Docker image only ships `server.js` plus the minimal node_modules tracing requires; the scrapers (`scripts/scrape-hymo.ts`, `scripts/scrape-grid-and-go.ts`) and `tsx` are NOT in the runner stage. Therefore `railway ssh` cannot run `npm run scrape:*` against the deployed container, and `railway run` only injects env vars into a *local* command. The first production deploy ships an empty database (4 shops, 6 categories, 1 season, 13 weeks seeded; 0 listings, 0 lap times). `/compare` correctly renders the empty-state. Round 5 needs to add a `POST /api/ingest` route (bearer-token-protected, mirrors the sibling `iracing-leaderboard` pattern) so scrapers can run on a cron and write to the live DB. Until then, the live site is a deploy smoke only — not a working data product.
+## Open / Backlog
 
-**Volume note (also round 5):** the SQLite file in production lives inside the container's writable layer (`/app/dev.db`); it is NOT on a persistent volume, so each redeploy resets it. Once an ingest endpoint exists, mount a Railway Volume at `/app/data/` and switch `DATABASE_PATH` to it so scrapes survive deploys.
+- File pipelines for **GO Setups, Majors Garage, P1Doks** — each is a separate per-shop investigation (different upstream APIs / auth models). Bridge bulk download skips them with a "no file pipeline" message until each is wired.
+- **Track-name iRacing folder mapping** — currently slugified. If downloads land at `<correct-car>/26s2/<wrong-track>/...`, do the same screenshot-and-map exercise we did for cars in round 24.
+- **VRS revisit** — only worth it if the user moves to VRS Premium AND accepts a monthly cookie-export chore. Round 14 closure is the canonical record.
+- **Mobile UI** for the now-5-column comparison table (round 11+ carry-over).
+- **`Oval` carClass dropdown leak** — cosmetic; round-11 carry-over from MG dirt-oval cars without HYMO authoritative class.
+- **Image footprint** — runner stage ~750 MB after Alpine Chromium install (round 7); could be trimmed by moving GnG to a separate scraper service.
+- **Cognito refresh-token rotation** — both GnG and HYMO log in fresh on every cache miss; sufficient for weekly cron, would matter at higher cadence.
+- **Bridge app file-download shop coverage** — see "File pipelines" above. UI is already shop-agnostic; just needs per-shop backend pipelines.
 
 ## Team Activity Log
 
@@ -2350,3 +2457,21 @@ Format per entry:
 **Open:**
 - /api/latest-bridge still returns "0.4.1" at Phase 1 end (ISR cache; will refresh to 0.4.2 after Phase 2 Railway redeploy clears it).
 - Carry-overs from round 32 unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint).
+
+### 2026-05-10 — claude (round 34)
+**Task:** Diagnose and fix bridge UI freeze ("crashes for a few seconds and then comes back" when searching for setups). Convert blocking Tauri commands to async so they run on the Tokio worker pool instead of blocking the main webview thread. Bump bridge to v0.4.3.
+**Files:** /Users/ricardosilva/projects/iracing-setup-comparison/{bridge-app/src-tauri/src/lib.rs, bridge-app/src-tauri/Cargo.toml, bridge-app/src-tauri/tauri.conf.json, bridge-app/package.json, CLAUDE.md (this entry + prior unfinished doc refresh from compacted session)}
+**Decisions:**
+- **Root cause confirmed via code read + production latency probe.** `fetch_picker` (lib.rs:401), `test_connection` (lib.rs:359), `download_setups` (lib.rs:425) were all `fn` (sync) using `reqwest::blocking::Client`. In Tauri v2 sync `#[tauri::command]` handlers run on the main thread — the same thread as the webview event loop and OS message pump — so every blocking HTTP call froze the entire UI for the duration of the round-trip. Symptom matches exactly: "freeze for a few seconds, then comes back" = main thread blocked on `reqwest::blocking::send()` then unblocked when response arrived.
+- **Latency budget that explains "sometimes":** measured production picker endpoints at 220–340 ms when warm (`/api/picker/{weeks,tracks,cars,files}` all sub-second); each Picker dropdown change cascades 3 invokes (~750ms–1s of frozen UI on a good day). Cold Railway container adds 1–3s. `/api/picker/files` on a GnG cache miss can call `getOrFetchManifest` which does a Cognito login + S3 download, easily 5–30s. Variability matches user's "sometimes".
+- **Fix:** all three commands now `async fn` + `reqwest::Client` (async) + `.send().await` chains. `download_setups` uses `resp.bytes().await.to_vec()` instead of `resp.read_to_end()` for the body. Zip extraction stays sync (operates on already-downloaded buffer + small file writes; briefly blocks Tokio worker but NOT the main UI thread, which was the original bug).
+- **Cargo.toml:** dropped `"blocking"` from reqwest features (was `["rustls-tls", "json", "blocking"]`, now `["rustls-tls", "json"]`). Async client is the default; tokio "full" already a dependency.
+- **No JS changes:** the JS-side `await invoke<...>()` pattern is unchanged — `invoke()` already returns a Promise regardless of whether the Rust handler is sync or async.
+- **No data schema changes**, no new env vars, no new permissions, no migration. Pure runtime-behavior fix.
+- **Verification:** `npm run lint` (root tsc --noEmit) green. `cd bridge-app && npx tsc --noEmit` green. Cargo verification not possible locally (no Rust toolchain on Mac); GitHub Actions Windows build is the compile gate. Confidence high — async reqwest is a single-feature swap with extensive Tauri v2 ecosystem precedent.
+- **Bridge v0.4.3** in all three manifests (package.json, tauri.conf.json, Cargo.toml).
+- **CLAUDE.md doc refresh** carried over from a prior compacted session (the session summary listed "update claude md" as the final user task; the changes were unstaged and unfinished). Doc-only project-overview updates that align with current state. Bundled into this commit since both are doc/metadata edits and the refresh is internally consistent.
+**Open:**
+- `download_setups` zip extraction loop runs synchronously on the Tokio worker thread (microseconds for ~5–30MB ZIPs). If a future round wants to fully isolate it from worker-pool contention, wrap in `tauri::async_runtime::spawn_blocking`. Not needed today; the original UI-thread freeze is fixed regardless.
+- `keyring` and `std::fs` calls remain sync inside the async functions — they're fast (microseconds for keychain + small JSON config reads). Same reasoning: brief worker-pool blip, no UI freeze.
+- All round-32 carry-overs unchanged (HYMO_PASSWORD rotation, Oval class, VRS, image footprint).
