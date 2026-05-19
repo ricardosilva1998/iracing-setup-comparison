@@ -59,8 +59,12 @@ const CATEGORIES = [
   "Dirt Oval",
 ];
 
-// Current season placeholder -- refresh once iRacing rolls a new build.
-const CURRENT_SEASON = { year: 2026, quarter: 2, label: "2026 S2" };
+const SEASONS = [
+  { year: 2026, quarter: 2, label: "2026 S2", isActive: true },
+  { year: 2026, quarter: 1, label: "2026 S1", isActive: false },
+  { year: 2025, quarter: 4, label: "2025 S4", isActive: false },
+  { year: 2025, quarter: 3, label: "2025 S3", isActive: false },
+];
 
 async function main() {
   console.log("Seeding iracing-setup-comparison database...\n");
@@ -96,24 +100,25 @@ async function main() {
   }
   console.log(`Seeded ${CATEGORIES.length} categories.`);
 
-  const season = await prisma.season.upsert({
-    where: { year_quarter: { year: CURRENT_SEASON.year, quarter: CURRENT_SEASON.quarter } },
-    create: CURRENT_SEASON,
-    update: { label: CURRENT_SEASON.label },
-  });
-
-  for (let weekNum = 1; weekNum <= 13; weekNum++) {
-    await prisma.seasonWeek.upsert({
-      where: { seasonId_weekNum: { seasonId: season.id, weekNum } },
-      create: {
-        seasonId: season.id,
-        weekNum,
-        label: weekNum === 13 ? "Week 13" : `Week ${weekNum}`,
-      },
-      update: {},
+  for (const s of SEASONS) {
+    const seasonRow = await prisma.season.upsert({
+      where: { year_quarter: { year: s.year, quarter: s.quarter } },
+      create: s,
+      update: { label: s.label, isActive: s.isActive },
     });
+    for (let weekNum = 1; weekNum <= 13; weekNum++) {
+      await prisma.seasonWeek.upsert({
+        where: { seasonId_weekNum: { seasonId: seasonRow.id, weekNum } },
+        create: {
+          seasonId: seasonRow.id,
+          weekNum,
+          label: weekNum === 13 ? "Week 13" : `Week ${weekNum}`,
+        },
+        update: {},
+      });
+    }
   }
-  console.log(`Seeded ${CURRENT_SEASON.label} with 13 weeks.`);
+  console.log(`Seeded ${SEASONS.length} seasons with 13 weeks each (${SEASONS.length * 13} weeks total).`);
 
   const counts = {
     shops: await prisma.shop.count(),

@@ -20,12 +20,14 @@ model Shop {
   updatedAt      DateTime       @updatedAt
 }
 
-// e.g. 2026 S2 -- supports historical though MVP only seeds the current season.
+// e.g. 2026 S2 -- supports historical seasons for multi-season picker.
+// isActive marks the current race season (exactly one row should be true).
 model Season {
   id        Int          @id @default(autoincrement())
   year      Int
   quarter   Int
   label     String
+  isActive  Boolean      @default(false)
   weeks     SeasonWeek[]
   createdAt DateTime     @default(now())
 
