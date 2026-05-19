@@ -37,7 +37,8 @@ RUN apk add --no-cache \
       freetype \
       harfbuzz \
       ca-certificates \
-      ttf-freefont
+      ttf-freefont \
+      sqlite
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
@@ -65,6 +66,12 @@ CMD sh -c '\
   else \
     echo "[boot] $TARGET already populated; preserving"; \
   fi; \
-  echo "[boot] applying schema to $TARGET"; \
-  DATABASE_PATH="$TARGET" npx --yes prisma db push --accept-data-loss --skip-generate; \
+  echo "[boot] applying additive schema deltas to $TARGET"; \
+  # Round 36: add Season.isActive column if missing. Idempotent — SQLite errors
+  # on duplicate columns; we swallow that to keep boot idempotent. The runner
+  # image does not include the Prisma CLI or schema file, so we apply additive
+  # changes here via sqlite3. Future schema deltas should be appended below.
+  sqlite3 "$TARGET" "ALTER TABLE Season ADD COLUMN isActive BOOLEAN NOT NULL DEFAULT 0;" 2>/dev/null \
+    && echo "[boot] added Season.isActive" \
+    || echo "[boot] Season.isActive already present (or migration noop)"; \
   exec node server.js'
