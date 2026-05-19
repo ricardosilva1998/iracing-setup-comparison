@@ -44,6 +44,8 @@ import { canonicalizeTrackName } from "../track-canonical";
 import { canonicalizeCarName } from "../car-name-canonical";
 import { getGngTokens } from "./grid-and-go-auth";
 
+export type SeasonArg = { year: number; quarter: number };
+
 const APP_HOST = "https://app.grid-and-go.com";
 const API_HOST = "https://oaseb2ya72.execute-api.eu-central-1.amazonaws.com";
 
@@ -129,7 +131,10 @@ export type GridAndGoScrapeResult = {
  * Will throw if `playwright` cannot be imported (e.g. production runner that
  * never installed it). The /api/ingest route catches that.
  */
-export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndGoScrapeResult> {
+export async function runGridAndGoScrape(
+  prisma: PrismaClient,
+  season?: SeasonArg,
+): Promise<GridAndGoScrapeResult> {
   const startedAt = new Date();
   console.log(`Grid-and-Go scraper start ${startedAt.toISOString()}`);
 
@@ -150,14 +155,23 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
   const allCategories = await prisma.category.findMany();
   const categoryByName = new Map(allCategories.map((c) => [c.name, c]));
 
-  const season = await prisma.season.findFirst({
-    orderBy: [{ year: "desc" }, { quarter: "desc" }],
-    include: { weeks: true },
-  });
-  if (!season) {
-    throw new Error("No Season rows -- run db:seed first.");
+  const seasonRow = season
+    ? await prisma.season.findUnique({
+        where: { year_quarter: { year: season.year, quarter: season.quarter } },
+        include: { weeks: true },
+      })
+    : await prisma.season.findFirst({
+        orderBy: [{ year: "desc" }, { quarter: "desc" }],
+        include: { weeks: true },
+      });
+  if (!seasonRow) {
+    throw new Error(
+      season
+        ? `Season ${season.year} Q${season.quarter} not in DB -- run db:seed first.`
+        : "No Season rows -- run db:seed first.",
+    );
   }
-  const weekByNum = new Map(season.weeks.map((w) => [w.weekNum, w]));
+  const weekByNum = new Map(seasonRow.weeks.map((w) => [w.weekNum, w]));
 
   // Obtain tokens via the shared auth helper (handles Playwright login + cache).
   const { idToken } = await getGngTokens();
@@ -170,7 +184,7 @@ export async function runGridAndGoScrape(prisma: PrismaClient): Promise<GridAndG
 
   try {
     const seasonsToFetch: { year: number; season: number }[] = [
-      { year: season.year, season: season.quarter },
+      { year: seasonRow.year, season: seasonRow.quarter },
     ];
 
     for (const target of seasonsToFetch) {

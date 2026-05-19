@@ -1,35 +1,37 @@
-/**
- * gosetups.gg scraper CLI wrapper.
- *
- * Round 10. The actual scrape logic lives in lib/scrape/gosetups.ts so it can
- * be called from the production /api/ingest route. This wrapper preserves the
- * developer flow `npm run scrape:gosetups` for local runs against ./dev.db
- * (or DATABASE_PATH).
- */
 import "dotenv/config";
-import path from "path";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { runGosetupsScrape } from "../lib/scrape/gosetups";
+import path from "path";
+import { runGosetupsScrape, type SeasonArg } from "../lib/scrape/gosetups";
 
-function getDbPath() {
-  if (process.env.DATABASE_PATH) return process.env.DATABASE_PATH;
-  return path.resolve(process.cwd(), "dev.db");
+function parseSeasonFromArgv(): SeasonArg | undefined {
+  const yearArg = process.argv.find((a) => a.startsWith("--year="));
+  const quarterArg = process.argv.find((a) => a.startsWith("--quarter="));
+  if (!yearArg && !quarterArg) return undefined;
+  if (!yearArg || !quarterArg) throw new Error("--year and --quarter must be provided together");
+  const year = parseInt(yearArg.split("=")[1], 10);
+  const quarter = parseInt(quarterArg.split("=")[1], 10);
+  if (Number.isNaN(year) || year < 2020 || year > 2030) throw new Error("--year must be 2020-2030");
+  if (Number.isNaN(quarter) || quarter < 1 || quarter > 4) throw new Error("--quarter must be 1-4");
+  return { year, quarter };
+}
+
+function getDbPath(): string {
+  return process.env.DATABASE_PATH || path.resolve(process.cwd(), "dev.db");
 }
 
 const adapter = new PrismaBetterSqlite3({ url: `file:${getDbPath()}` });
 const prisma = new PrismaClient({ adapter });
 
-runGosetupsScrape(prisma)
-  .then((result) => {
-    console.log(
-      `\nresult: inserted=${result.inserted} updated=${result.updated} errors=${result.errors.length}`,
-    );
-  })
+async function main() {
+  const season = parseSeasonFromArgv();
+  const result = await runGosetupsScrape(prisma, season);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+main()
   .catch((e) => {
-    console.error("Scraper crashed:", String((e as Error).message || e).slice(0, 200));
+    console.error("Scraper failed:", e);
     process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());

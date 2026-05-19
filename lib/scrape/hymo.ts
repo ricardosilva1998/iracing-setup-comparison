@@ -31,6 +31,8 @@ import { canonicalFromHymoClass } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
 import { canonicalizeCarName } from "../car-name-canonical";
 
+export type SeasonArg = { year: number; quarter: number };
+
 const HYMO_HOST = "https://www.hymosetups.com";
 const HYMO_API_HOST = "https://api.hymosetups.com";
 const ROBOTS_URL = `${HYMO_HOST}/robots.txt`;
@@ -157,8 +159,18 @@ export type HymoScrapeResult = {
  * Pure async function: no top-level await, no shebangs, no process.exit,
  * no import.meta. Caller is responsible for prisma connect/disconnect.
  */
-export async function runHymoScrape(prisma: PrismaClient): Promise<HymoScrapeResult> {
+export async function runHymoScrape(
+  prisma: PrismaClient,
+  season?: SeasonArg,
+): Promise<HymoScrapeResult> {
   const startedAt = new Date();
+  // Round 36: HYMO API has no season filter (probed round 28). The scraper
+  // writes each item to whichever Season row its season.year + season.season_num
+  // points to. The season arg is logged for traceability when called by the
+  // backfill orchestrator.
+  if (season) {
+    console.log(`HYMO scraper: season arg ${season.year}S${season.quarter} received — API has no season filter; writes all items to matching DB rows.`);
+  }
   const ua = userAgent();
   console.log(`HYMO scraper start ${startedAt.toISOString()}`);
 

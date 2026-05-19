@@ -618,7 +618,12 @@ export type MajorsGarageScrapeResult = {
  * Run the Majors Garage scrape end-to-end against the supplied prisma client.
  * Pure async function: no top-level await, no shebangs, no process.exit.
  */
-export async function runMajorsGarageScrape(prisma: PrismaClient): Promise<MajorsGarageScrapeResult> {
+export type SeasonArg = { year: number; quarter: number };
+
+export async function runMajorsGarageScrape(
+  prisma: PrismaClient,
+  season?: SeasonArg,
+): Promise<MajorsGarageScrapeResult> {
   const startedAt = new Date();
   const ua = userAgent();
   console.log(`Majors Garage scraper start ${startedAt.toISOString()}`);
@@ -628,12 +633,21 @@ export async function runMajorsGarageScrape(prisma: PrismaClient): Promise<Major
     throw new Error(`Shop '${SHOP_NAME}' is missing -- run db:seed first.`);
   }
 
-  const seasons = await prisma.season.findMany({
-    orderBy: [{ year: "desc" }, { quarter: "desc" }],
-    include: { weeks: true },
-  });
+  const seasons = season
+    ? await prisma.season.findMany({
+        where: { year: season.year, quarter: season.quarter },
+        include: { weeks: true },
+      })
+    : await prisma.season.findMany({
+        orderBy: [{ year: "desc" }, { quarter: "desc" }],
+        include: { weeks: true },
+      });
   if (seasons.length === 0) {
-    throw new Error("No Season rows -- run db:seed first.");
+    throw new Error(
+      season
+        ? `Season ${season.year} Q${season.quarter} not in DB -- run db:seed first.`
+        : "No Season rows -- run db:seed first.",
+    );
   }
 
   const allCategories = await prisma.category.findMany();
@@ -673,10 +687,10 @@ export async function runMajorsGarageScrape(prisma: PrismaClient): Promise<Major
 
   // Iterate over each known season and pull all rows for it via cursor
   // pagination. The Bubble API caps `limit` at 100; cursor is the offset.
-  for (const season of seasons) {
-    const seasonStr = `S${season.quarter}`;
-    const yearNum = season.year;
-    const weekByNum = new Map(season.weeks.map((w) => [w.weekNum, w]));
+  for (const seasonRow of seasons) {
+    const seasonStr = `S${seasonRow.quarter}`;
+    const yearNum = seasonRow.year;
+    const weekByNum = new Map(seasonRow.weeks.map((w) => [w.weekNum, w]));
 
     const constraints = [
       { key: "Year", constraint_type: "equals", value: yearNum },
@@ -719,7 +733,7 @@ export async function runMajorsGarageScrape(prisma: PrismaClient): Promise<Major
           // Validate the row belongs to this season (defensive against any
           // server-side filter mishandling).
           if (row.Year !== yearNum) continue;
-          if (parseSeason(row.Season) !== season.quarter) continue;
+          if (parseSeason(row.Season) !== seasonRow.quarter) continue;
           if ((row.sim || "").toLowerCase() !== "iracing") continue;
           if (row.is_legacy === true) continue;
 

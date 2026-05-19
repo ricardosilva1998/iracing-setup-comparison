@@ -210,7 +210,12 @@ export type P1DoksScrapeResult = {
  * Run the P1Doks scrape end-to-end against the supplied prisma client.
  * Pure async function. Caller is responsible for prisma connect/disconnect.
  */
-export async function runP1DoksScrape(prisma: PrismaClient): Promise<P1DoksScrapeResult> {
+export type SeasonArg = { year: number; quarter: number };
+
+export async function runP1DoksScrape(
+  prisma: PrismaClient,
+  season?: SeasonArg,
+): Promise<P1DoksScrapeResult> {
   const startedAt = new Date();
   console.log(`P1Doks scraper start ${startedAt.toISOString()}`);
 
@@ -226,14 +231,23 @@ export async function runP1DoksScrape(prisma: PrismaClient): Promise<P1DoksScrap
   const allCategories = await prisma.category.findMany();
   const categoryByName = new Map(allCategories.map((c) => [c.name, c]));
 
-  const season = await prisma.season.findFirst({
-    orderBy: [{ year: "desc" }, { quarter: "desc" }],
-    include: { weeks: true },
-  });
-  if (!season) {
-    throw new Error("No Season rows -- run db:seed first.");
+  const seasonRow = season
+    ? await prisma.season.findUnique({
+        where: { year_quarter: { year: season.year, quarter: season.quarter } },
+        include: { weeks: true },
+      })
+    : await prisma.season.findFirst({
+        orderBy: [{ year: "desc" }, { quarter: "desc" }],
+        include: { weeks: true },
+      });
+  if (!seasonRow) {
+    throw new Error(
+      season
+        ? `Season ${season.year} Q${season.quarter} not in DB -- run db:seed first.`
+        : "No Season rows -- run db:seed first.",
+    );
   }
-  const weekByNum = new Map(season.weeks.map((w) => [w.weekNum, w]));
+  const weekByNum = new Map(seasonRow.weeks.map((w) => [w.weekNum, w]));
 
   const fetcher = new PoliteFetcher(userAgent());
 
@@ -243,7 +257,7 @@ export async function runP1DoksScrape(prisma: PrismaClient): Promise<P1DoksScrap
   const errors: string[] = [];
 
   const baseUrl = `${API_HOST}/ql/data-packs`;
-  const target = { year: season.year, seasonNum: season.quarter };
+  const target = { year: seasonRow.year, seasonNum: seasonRow.quarter };
 
   let offset = 0;
   let totalAvailable: number | null = null;

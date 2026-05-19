@@ -49,6 +49,8 @@ import { canonicalFromName } from "../car-class-canonical";
 import { canonicalizeTrackName } from "../track-canonical";
 import { canonicalizeCarName } from "../car-name-canonical";
 
+export type SeasonArg = { year: number; quarter: number };
+
 const SHOP_NAME = "GO Setups";
 const GOSETUPS_HOST = "https://gosetups.gg";
 const GOSETUPS_ROBOTS = `${GOSETUPS_HOST}/robots.txt`;
@@ -546,7 +548,10 @@ function resolveCarName(sheetName: string, productNames: string[]): string {
  * Run the gosetups scrape end-to-end against the supplied prisma client.
  * Pure async function (no top-level await, no shebangs, no process.exit).
  */
-export async function runGosetupsScrape(prisma: PrismaClient): Promise<GosetupsScrapeResult> {
+export async function runGosetupsScrape(
+  prisma: PrismaClient,
+  season?: SeasonArg,
+): Promise<GosetupsScrapeResult> {
   const startedAt = new Date();
   const ua = userAgent();
   console.log(`gosetups scraper start ${startedAt.toISOString()}`);
@@ -556,12 +561,21 @@ export async function runGosetupsScrape(prisma: PrismaClient): Promise<GosetupsS
     throw new Error(`Shop '${SHOP_NAME}' is missing -- run db:seed first.`);
   }
 
-  const seasons = await prisma.season.findMany({
-    orderBy: [{ year: "desc" }, { quarter: "desc" }],
-    include: { weeks: true },
-  });
+  const seasons = season
+    ? await prisma.season.findMany({
+        where: { year: season.year, quarter: season.quarter },
+        include: { weeks: true },
+      })
+    : await prisma.season.findMany({
+        orderBy: [{ year: "desc" }, { quarter: "desc" }],
+        include: { weeks: true },
+      });
   if (seasons.length === 0) {
-    throw new Error("No Season rows -- run db:seed first.");
+    throw new Error(
+      season
+        ? `Season ${season.year} Q${season.quarter} not in DB -- run db:seed first.`
+        : "No Season rows -- run db:seed first.",
+    );
   }
 
   const allCategories = await prisma.category.findMany();

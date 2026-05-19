@@ -37,6 +37,7 @@ import { runMajorsGarageScrape } from "@/lib/scrape/majors-garage";
 import { runP1DoksScrape } from "@/lib/scrape/p1doks";
 import { migrateTracks } from "@/lib/migrate-tracks";
 import { migrateCars } from "@/lib/migrate-cars";
+import { parseSeasonParams, resolveSeason } from "@/lib/season-resolve";
 
 export const dynamic = "force-dynamic";
 // Round 11: bumped to 600s. Round 10's `?shop=all` ran 316.7s with 4 shops;
@@ -116,6 +117,19 @@ export async function POST(request: NextRequest) {
   // 3. Determine which shops to run.
   const shop = parseShopParam(request);
 
+  // Round 36: optional ?year&quarter override for backfill via curl.
+  const parsedSeason = parseSeasonParams(request.nextUrl.searchParams);
+  if (parsedSeason && "error" in parsedSeason) {
+    return NextResponse.json({ error: parsedSeason.error }, { status: 400 });
+  }
+  const seasonOverride = await resolveSeason(parsedSeason);
+  if (!seasonOverride) {
+    return NextResponse.json({ error: "no season available -- run db:seed" }, { status: 500 });
+  }
+  const seasonArg = parsedSeason
+    ? { year: parsedSeason.year, quarter: parsedSeason.quarter }
+    : undefined;
+
   // 4. Read sanitisation seeds from env so any leaked stack message is
   //    scrubbed of credentials before being returned to the caller.
   const secrets = [
@@ -140,6 +154,7 @@ export async function POST(request: NextRequest) {
     ok: boolean;
     shop: ShopFilter;
     durationMs: number;
+    season?: { year: number; quarter: number; label: string };
     tracks?: MigrationOutcome;
     cars?: MigrationOutcome;
     hymo?: ScrapeOutcome;
@@ -151,6 +166,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     shop,
     durationMs: 0,
+    season: { year: seasonOverride.year, quarter: seasonOverride.quarter, label: seasonOverride.label },
   };
 
   try {
@@ -180,7 +196,7 @@ export async function POST(request: NextRequest) {
 
     if (shop === "hymo" || shop === "all") {
       try {
-        const r = await runHymoScrape(prisma);
+        const r = await runHymoScrape(prisma, seasonArg);
         result.hymo = {
           fetched: r.fetched,
           inserted: r.inserted,
@@ -197,7 +213,7 @@ export async function POST(request: NextRequest) {
 
     if (shop === "grid-and-go" || shop === "all") {
       try {
-        const r = await runGridAndGoScrape(prisma);
+        const r = await runGridAndGoScrape(prisma, seasonArg);
         result.gridAndGo = {
           fetched: r.fetched,
           inserted: r.inserted,
@@ -216,7 +232,7 @@ export async function POST(request: NextRequest) {
 
     if (shop === "gosetups" || shop === "all") {
       try {
-        const r = await runGosetupsScrape(prisma);
+        const r = await runGosetupsScrape(prisma, seasonArg);
         result.gosetups = {
           fetched: r.fetched,
           inserted: r.inserted,
@@ -233,7 +249,7 @@ export async function POST(request: NextRequest) {
 
     if (shop === "majors-garage" || shop === "all") {
       try {
-        const r = await runMajorsGarageScrape(prisma);
+        const r = await runMajorsGarageScrape(prisma, seasonArg);
         result.majorsGarage = {
           fetched: r.fetched,
           inserted: r.inserted,
@@ -250,7 +266,7 @@ export async function POST(request: NextRequest) {
 
     if (shop === "p1doks" || shop === "all") {
       try {
-        const r = await runP1DoksScrape(prisma);
+        const r = await runP1DoksScrape(prisma, seasonArg);
         result.p1doks = {
           fetched: r.fetched,
           inserted: r.inserted,
