@@ -25,6 +25,19 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------------
 const FALLBACK_RELEASES = [
   {
+    tagName: "bridge-v0.5.0",
+    publishedAt: "2026-05-19",
+    assets: [
+      {
+        name: "iRacing.Setup.Bridge_0.5.0_x64_en-US.msi",
+        sizeBytes: 3289088,
+        downloadUrl:
+          "https://github.com/ricardosilva1998/iracing-setup-comparison/releases/download/bridge-v0.5.0/iRacing.Setup.Bridge_0.5.0_x64_en-US.msi",
+      },
+    ],
+    body: "Round 36: Picker tab fully redesigned into a cards-everywhere flow — Season → Week → Track → Track-Detail-by-Class. Season selector at the top of the Picker; the last 4 iRacing seasons (26S2, 26S1, 25S4, 25S3) are selectable. Class accordions on the track detail page let you bulk-download all setups for a class from one shop in a single click. Bulk + Manage + Settings tabs unchanged.",
+  },
+  {
     tagName: "bridge-v0.4.4",
     publishedAt: "2026-05-10",
     assets: [
