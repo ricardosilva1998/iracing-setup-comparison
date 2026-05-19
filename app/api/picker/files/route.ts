@@ -26,6 +26,7 @@ import { prisma } from "@/lib/db";
 import { shopNameToSlug } from "@/lib/shop-slug";
 import { getOrFetchManifest, validateDatapackId } from "@/lib/files-manifest";
 import { lookupIracingFolder } from "@/lib/iracing-car-folders";
+import { parseSeasonParams, resolveSeason } from "@/lib/season-resolve";
 
 export const dynamic = "force-dynamic";
 
@@ -78,20 +79,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  try {
-    // Resolve the active season's week row for this weekNum.
-    const seasons = await prisma.season.findMany({
-      orderBy: [{ year: "desc" }, { quarter: "desc" }],
-      take: 1,
-    });
-    const activeSeasonId = seasons[0]?.id ?? null;
+  const parsed = parseSeasonParams(request.nextUrl.searchParams);
+  if (parsed && "error" in parsed) {
+    return NextResponse.json({ error: parsed.error }, { status: 400, headers: CORS_HEADERS });
+  }
 
-    if (!activeSeasonId) {
+  try {
+    const season = await resolveSeason(parsed);
+    if (!season) {
       return NextResponse.json({ files: [], iracingFolderName: null }, { headers: CORS_HEADERS });
     }
 
     const seasonWeek = await prisma.seasonWeek.findUnique({
-      where: { seasonId_weekNum: { seasonId: activeSeasonId, weekNum } },
+      where: { seasonId_weekNum: { seasonId: season.id, weekNum } },
     });
 
     if (!seasonWeek) {
