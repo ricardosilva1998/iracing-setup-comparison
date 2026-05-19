@@ -3,7 +3,10 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "node server.js"
+# startCommand intentionally NOT set — Dockerfile CMD runs `prisma db push`
+# before `node server.js`, which is required for schema migrations to land on
+# the volume DB on container boot (round 36 adds Season.isActive column).
 healthcheckPath = "/"
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
